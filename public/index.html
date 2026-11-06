@@ -16,7 +16,7 @@
       <button type="button" class="brand" id="homeBtn" aria-label="홈으로 이동">
         <span class="brand-icon">✳</span> <span>track<span class="brand-light">room</span></span><span class="brand-dot">.</span>
       </button>
-      <span class="header-right"><span class="signal-dot"></span> SHARE WHAT YOU LOVE</span>
+      <div class="header-account"><span class="header-right"><span class="signal-dot"></span> SHARE WHAT YOU LOVE</span><button type="button" id="accountButton" class="account-pill">로그인 / 가입</button></div>
     </header>
 
     <main id="landing" class="landing">
@@ -34,9 +34,8 @@
         </div>
       </section>
       <section class="entry-card">
-        <div class="entry-header"><span class="tag">GET STARTED</span><h2>어디서 시작할까?</h2><p>이름만 입력하면 바로 시작할 수 있어.</p></div>
-        <label class="field-label" for="nickname">내 닉네임</label>
-        <input id="nickname" maxlength="20" placeholder="친구들에게 보일 이름" autocomplete="nickname" />
+        <div class="entry-header"><span class="tag">GET STARTED</span><h2>어디서 시작할까?</h2><p>계정으로 로그인하고 친구들과 노래를 공유해 봐.</p></div>
+        <div id="accountSummary" class="account-summary"><p>추천방을 이용하려면 먼저 로그인해 줘.</p><button class="btn btn-primary" id="authEntryButton" type="button">회원가입 / 로그인 ↗</button></div>
         <div class="entry-divider"><span>새로운 방 만들기</span></div>
         <form id="createForm">
           <label class="field-label" for="roomName">방 이름</label>
@@ -94,6 +93,49 @@
       <footer class="room-footer">MADE FOR THE SONGS WE WANT EVERYONE TO HEAR <span>✳</span></footer>
     </main>
     <footer id="landingFooter" class="landing-footer">TRACKROOM <span>©</span> GOOD TASTE IS CONTAGIOUS.</footer>
+  </div>
+  <div id="authOverlay" class="modal-backdrop hidden" role="presentation">
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="authHeading">
+      <button id="closeAuth" class="modal-close" type="button" aria-label="닫기">✕</button>
+      <div class="mini-heading">YOUR TRACKROOM ACCOUNT</div>
+      <h2 id="authHeading">음악 취향을 저장해 봐.</h2>
+      <div class="auth-tabs"><button type="button" id="loginTab" class="auth-tab active">로그인</button><button type="button" id="registerTab" class="auth-tab">회원가입</button></div>
+      <form id="authForm">
+        <label class="field-label" for="authUsername">로그인 아이디</label>
+        <input id="authUsername" name="username" placeholder="영문·숫자 3~24자" minlength="3" maxlength="24" required autocomplete="username" />
+        <label class="field-label" for="authPassword">비밀번호</label>
+        <input id="authPassword" name="password" type="password" placeholder="비밀번호 입력" minlength="10" maxlength="128" required autocomplete="current-password" />
+        <div id="registerExtra" class="hidden">
+          <label class="field-label" for="registerNickname">닉네임</label>
+          <input id="registerNickname" maxlength="20" placeholder="추천방에서 보일 이름" autocomplete="nickname" />
+          <label class="field-label" for="registerPlatform">주로 쓰는 음원 플랫폼</label>
+          <select id="registerPlatform" class="platform-select">
+            <option value="none">아직 선택하지 않음</option><option value="spotify">Spotify</option><option value="apple">Apple Music</option><option value="melon">멜론</option><option value="genie">지니뮤직</option><option value="flo">FLO</option><option value="bugs">벅스</option><option value="youtube">YouTube Music</option><option value="other">기타</option>
+          </select>
+        </div>
+        <button id="authSubmit" class="btn btn-primary btn-wide" type="submit">로그인 <span>→</span></button>
+        <p class="auth-fineprint">비밀번호는 안전하게 해시해 저장해. 비밀번호 찾기 기능은 아직 없어.</p>
+      </form>
+    </section>
+  </div>
+  <div id="profileOverlay" class="modal-backdrop hidden" role="presentation">
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="profileHeading">
+      <button id="closeProfile" class="modal-close" type="button" aria-label="닫기">✕</button>
+      <div class="mini-heading">MY LISTENING PROFILE</div>
+      <h2 id="profileHeading">내 프로필</h2>
+      <p id="profileUsername" class="profile-username"></p>
+      <form id="profileForm">
+        <label class="field-label" for="profileNickname">닉네임</label>
+        <input id="profileNickname" maxlength="20" required />
+        <label class="field-label" for="profilePlatform">주로 쓰는 음원 플랫폼</label>
+        <select id="profilePlatform" class="platform-select">
+          <option value="none">아직 선택하지 않음</option><option value="spotify">Spotify</option><option value="apple">Apple Music</option><option value="melon">멜론</option><option value="genie">지니뮤직</option><option value="flo">FLO</option><option value="bugs">벅스</option><option value="youtube">YouTube Music</option><option value="other">기타</option>
+        </select>
+        <button class="btn btn-primary btn-wide" type="submit">프로필 저장하기 <span>✓</span></button>
+      </form>
+      <button id="logoutButton" class="btn btn-outline btn-wide" type="button">로그아웃 <span>→</span></button>
+      <p class="auth-fineprint">음원 서비스 선택은 선호도 저장용이야. 실제 Spotify·멜론 로그인 연결은 아직 지원하지 않아.</p>
+    </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>

@@ -1,9 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { roomCode: null, room: null, songs: [], sort: 'recent', nickname: localStorage.getItem('tr_nickname') || '', userId: localStorage.getItem('tr_user_id') };
-if (!state.userId) {
-  state.userId = (crypto.randomUUID?.() || `user-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  localStorage.setItem('tr_user_id', state.userId);
-}
+const state = { roomCode: null, room: null, songs: [], sort: 'recent', user: null, pendingInvite: null, authMode: 'login' };
 let refreshTimer = null;
 let toastTimer = null;
 
@@ -19,18 +15,97 @@ function escaped(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const response = await fetch(path, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
   let data;
   try { data = await response.json(); } catch { throw new Error('서버 응답을 읽지 못했습니다.'); }
   if (!response.ok) throw new Error(data.error || `오류가 발생했습니다. (${response.status})`);
   return data;
 }
-function nick() {
-  const value = $('nickname').value.trim();
-  if (!value) { $('nickname').focus(); throw new Error('닉네임을 먼저 입력해 주세요.'); }
-  localStorage.setItem('tr_nickname', value);
-  state.nickname = value;
-  return value;
+const PLATFORM_NAMES = { spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니뮤직', flo: 'FLO', bugs: '벅스', youtube: 'YouTube Music', other: '기타', none: '미설정' };
+function showAuth(mode = 'login') {
+  state.authMode = mode;
+  $('loginTab').classList.toggle('active', mode === 'login');
+  $('registerTab').classList.toggle('active', mode === 'register');
+  $('registerExtra').classList.toggle('hidden', mode !== 'register');
+  $('authHeading').textContent = mode === 'register' ? '좋아하는 음악으로 연결되는 곳.' : '다시 만나서 반가워.';
+  $('authSubmit').innerHTML = mode === 'register' ? '회원가입하고 시작하기 <span>→</span>' : '로그인 <span>→</span>';
+  $('authPassword').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+  $('authForm').reset();
+  $('authOverlay').classList.remove('hidden');
+  $('authUsername').focus();
+}
+function hideAuth() { $('authOverlay').classList.add('hidden'); }
+function showProfile() {
+  if (!state.user) return showAuth();
+  $('profileUsername').textContent = '@' + state.user.username;
+  $('profileNickname').value = state.user.nickname;
+  $('profilePlatform').value = state.user.platform;
+  $('profileOverlay').classList.remove('hidden');
+}
+function hideProfile() { $('profileOverlay').classList.add('hidden'); }
+function renderAccount() {
+  $('accountButton').textContent = state.user ? `${state.user.nickname} · 내 프로필` : '로그인 / 가입';
+  $('accountSummary').classList.toggle('logged-in', Boolean(state.user));
+  if (state.user) {
+    $('accountSummary').innerHTML = `<div class="summary-name">✳ ${escaped(state.user.nickname)}</div><div class="summary-platform">내 음악 플랫폼 · ${escaped(PLATFORM_NAMES[state.user.platform] || '미설정')}</div><button class="btn" type="button" id="authEntryButton">프로필 수정하기 ↗</button>`;
+    $('authEntryButton').addEventListener('click', showProfile);
+  } else {
+    $('accountSummary').innerHTML = '<p>추천방을 이용하려면 먼저 로그인해 줘.</p><button class="btn btn-primary" id="authEntryButton" type="button">회원가입 / 로그인 ↗</button>';
+    $('authEntryButton').addEventListener('click', () => showAuth('register'));
+  }
+}
+async function completeLogin(user) {
+  state.user = user;
+  renderAccount();
+  hideAuth();
+  if (state.pendingInvite) {
+    const code = state.pendingInvite;
+    try {
+      await api(`/api/rooms/${encodeURIComponent(code)}/join`, {method: 'POST', body: '{}'});
+      state.pendingInvite = null;
+      goToRoom(code);
+    } catch (e) { toast(e.message, true); }
+  } else toast(`${user.nickname}님, 환영해!`);
+}
+async function submitAuth(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = { username: $('authUsername').value.trim(), password: $('authPassword').value };
+  if (state.authMode === 'register') {
+    payload.nickname = $('registerNickname').value.trim();
+    payload.platform = $('registerPlatform').value;
+    if (!payload.nickname) return toast('닉네임을 입력해 줘.', true);
+  }
+  setBusy(form, true);
+  try {
+    const data = await api(`/api/auth/${state.authMode === 'register' ? 'register' : 'login'}`, {method: 'POST', body: JSON.stringify(payload)});
+    await completeLogin(data.user);
+  } catch(e) { toast(e.message, true); }
+  finally { setBusy(form, false); }
+}
+async function submitProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setBusy(form, true);
+  try {
+    const data = await api('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({nickname: $('profileNickname').value.trim(), platform: $('profilePlatform').value})});
+    state.user = data.user;
+    renderAccount();
+    hideProfile();
+    await refreshRoom();
+    toast('프로필을 저장했어!');
+  } catch(e) { toast(e.message, true); }
+  finally { setBusy(form, false); }
+}
+async function logout() {
+  try {
+    await api('/api/auth/logout', {method: 'POST', body: '{}'});
+    state.user = null;
+    hideProfile();
+    showLanding();
+    renderAccount();
+    toast('로그아웃했어.');
+  } catch(e) { toast(e.message, true); }
 }
 function setBusy(form, busy) {
   [...form.querySelectorAll('button, input, textarea')].forEach(x => x.disabled = busy);
@@ -43,7 +118,7 @@ function showLanding() {
   $('landingFooter').classList.remove('hidden');
   $('roomView').classList.add('hidden');
   history.replaceState({}, '', '/');
-  $('nickname').value = state.nickname;
+
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goToRoom(code) {
@@ -58,10 +133,10 @@ function goToRoom(code) {
   window.scrollTo({top:0,behavior:'smooth'});
 }
 async function refreshRoom() {
-  if (!state.roomCode) return;
+  if (!state.roomCode || !state.user) return;
   const roomCode = state.roomCode;
   try {
-    const data = await api(`/api/rooms/${roomCode}?userId=${encodeURIComponent(state.userId)}`);
+    const data = await api(`/api/rooms/${roomCode}`);
     if (state.roomCode !== roomCode) return;
     state.room = data.room;
     state.songs = data.songs;
@@ -71,7 +146,10 @@ async function refreshRoom() {
     $('songTotal').textContent = data.songs.length;
     document.title = `${data.room.name} · TRACKROOM`;
     renderSongs();
-  } catch (error) { toast(error.message, true); }
+  } catch (error) {
+    if (error.message.includes('로그인')) { clearInterval(refreshTimer); state.user = null; renderAccount(); showLanding(); showAuth(); }
+    toast(error.message, true);
+  }
 }
 function parseTime(str) {
   str = str.trim();
@@ -115,7 +193,7 @@ function renderSongs() {
     return;
   }
   $('songList').innerHTML = list.map(song => {
-    const owned = song.userId === state.userId;
+    const owned = song.userId === state.user?.id;
     const range = song.startSeconds !== null ? `<span class="song-timerange">♫ ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – '+timeLabel(song.endSeconds) : '부터'}</span>` : '';
     const link = song.musicUrl ? `<a href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer" class="song-link">${escaped(sourceLabel(song.musicUrl))}에서 보기 ↗</a>` : '';
     return `<article class="song-card" data-id="${song.id}">
@@ -135,11 +213,11 @@ async function createRoom(event) {
   event.preventDefault();
   const form = event.currentTarget;
   try {
-    const nickname = nick();
+    if (!state.user) { showAuth('register'); throw new Error('로그인 후 이용해 줘.'); }
     const name = $('roomName').value.trim();
     if (!name) throw new Error('방 이름을 입력해 주세요.');
     setBusy(form,true);
-    const data = await api('/api/rooms',{method:'POST',body:JSON.stringify({name,nickname,userId:state.userId})});
+    const data = await api('/api/rooms',{method:'POST',body:JSON.stringify({name})});
     goToRoom(data.code);
     toast('추천방이 만들어졌어! 초대 링크를 공유해 봐.');
   } catch(e) { toast(e.message, true); }
@@ -149,11 +227,11 @@ async function joinRoom(event) {
   event.preventDefault();
   const form = event.currentTarget;
   try {
-    const nickname = nick();
+    if (!state.user) { state.pendingInvite = $('roomCodeInput').value.replace(/\s/g,'').toUpperCase(); showAuth('register'); throw new Error('로그인 후 이용해 줘.'); }
     const code = $('roomCodeInput').value.replace(/\s/g,'').toUpperCase();
     if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) throw new Error('8자리 초대 코드를 확인해 주세요.');
     setBusy(form,true);
-    await api(`/api/rooms/${code}/join`,{method:'POST',body:JSON.stringify({userId:state.userId,nickname})});
+    await api(`/api/rooms/${code}/join`,{method:'POST',body:'{}'});
     goToRoom(code);
     toast('추천방에 입장했어!');
   } catch(e) { toast(e.message,true); }
@@ -169,7 +247,6 @@ async function addSong(event) {
     if (endSeconds !== null && endSeconds <= startSeconds) throw new Error('끝 구간은 시작보다 뒤여야 해.');
     setBusy(form,true);
     await api(`/api/rooms/${state.roomCode}/songs`, {method:'POST',body:JSON.stringify({
-      userId:state.userId, nickname:state.nickname,
       title:$('songTitle').value.trim(), artist:$('artist').value.trim(),
       note:$('note').value, musicUrl:$('musicUrl').value.trim(),
       startSeconds, endSeconds
@@ -189,9 +266,9 @@ async function onSongAction(event) {
   button.disabled = true;
   try {
     if (action === 'like') {
-      await api(`/api/rooms/${state.roomCode}/songs/${id}/like`, {method:'POST', body:JSON.stringify({userId:state.userId})});
+      await api(`/api/rooms/${state.roomCode}/songs/${id}/like`, {method:'POST', body:'{}'});
     } else if (action === 'delete') {
-      await api(`/api/rooms/${state.roomCode}/songs/${id}`, {method:'DELETE', body:JSON.stringify({userId:state.userId})});
+      await api(`/api/rooms/${state.roomCode}/songs/${id}`, {method:'DELETE', body:'{}'});
       toast('추천곡을 삭제했어.');
     }
     await refreshRoom();
@@ -218,8 +295,18 @@ function setSort(sort) {
   renderSongs();
 }
 async function init() {
-  $('nickname').value = state.nickname;
   $('homeBtn').addEventListener('click',showLanding);
+  $('accountButton').addEventListener('click', () => state.user ? showProfile() : showAuth());
+  $('authForm').addEventListener('submit',submitAuth);
+  $('profileForm').addEventListener('submit',submitProfile);
+  $('loginTab').addEventListener('click',() => showAuth('login'));
+  $('registerTab').addEventListener('click',() => showAuth('register'));
+  $('closeAuth').addEventListener('click',hideAuth);
+  $('closeProfile').addEventListener('click',hideProfile);
+  $('logoutButton').addEventListener('click',logout);
+  $('authOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideAuth(); });
+  $('profileOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideProfile(); });
+  document.addEventListener('keydown', e => { if(e.key==='Escape') { hideAuth(); hideProfile(); } });
   $('createForm').addEventListener('submit',createRoom);
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
@@ -227,17 +314,27 @@ async function init() {
   $('shareBtn').addEventListener('click',copyShare);
   $('sortRecent').addEventListener('click',()=>setSort('recent'));
   $('sortLikes').addEventListener('click',()=>setSort('likes'));
-  const code = new URL(location.href).searchParams.get('room');
-  if (code) {
-    $('roomCodeInput').value = code.toUpperCase();
-    try { await api(`/api/rooms/${encodeURIComponent(code.toUpperCase())}`); }
-    catch(e) { toast(e.message,true); return; }
-    if (state.nickname) {
-      try {
-        await api(`/api/rooms/${encodeURIComponent(code.toUpperCase())}/join`,{method:'POST',body:JSON.stringify({userId:state.userId,nickname:state.nickname})});
-        goToRoom(code.toUpperCase());
-      } catch(e) { toast(e.message,true); }
-    } else { toast('닉네임을 입력하고 추천방에 참여해 줘.'); }
+  renderAccount();
+  try {
+    const data = await api('/api/auth/me');
+    state.user = data.user;
+    renderAccount();
+  } catch { /* Not logged in yet */ }
+  const invite = new URL(location.href).searchParams.get('room');
+  if (invite) {
+    const code = invite.replace(/\s/g,'').toUpperCase();
+    $('roomCodeInput').value = code;
+    if (/^[A-HJ-NP-Z2-9]{8}$/.test(code)) {
+      if (state.user) {
+        try {
+          await api(`/api/rooms/${code}/join`, {method:'POST', body:'{}'});
+          goToRoom(code);
+        } catch(e) { toast(e.message,true); }
+      } else {
+        state.pendingInvite = code;
+        toast('로그인하면 초대받은 방으로 바로 이동할 수 있어.');
+      }
+    } else toast('초대 코드가 올바르지 않아.', true);
   }
 }
 init();
