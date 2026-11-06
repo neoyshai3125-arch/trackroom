@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101213" />
+  <meta name="description" content="친구들과 각자 좋아하는 노래와 추천 구간을 공유하는 공간" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+  <title>TRACKROOM — 오늘의 노래를 나누는 공간</title>
+</head>
+<body>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div>
+  <div class="shell">
+    <header class="site-header">
+      <button type="button" class="brand" id="homeBtn" aria-label="홈으로 이동">
+        <span class="brand-icon">✳</span> <span>track<span class="brand-light">room</span></span><span class="brand-dot">.</span>
+      </button>
+      <span class="header-right"><span class="signal-dot"></span> SHARE WHAT YOU LOVE</span>
+    </header>
+
+    <main id="landing" class="landing">
+      <section class="intro">
+        <div class="eyebrow"><span class="eyebrow-line"></span> THE MUSIC YOU CAN'T KEEP TO YOURSELF</div>
+        <h1>오늘 너의<br /><em>최애곡은</em> 뭐야?</h1>
+        <p class="hero-description">혼자 듣기 아까운 노래가 있다면, 친구들에게 알려줘.<br />서로의 취향이 모여 하나의 플레이리스트가 되는 곳.</p>
+        <div class="landing-points">
+          <span><b>01</b> 방 만들기</span><span><b>02</b> 노래 추천</span><span><b>03</b> 취향 나누기</span>
+        </div>
+        <div class="record-visual" aria-hidden="true">
+          <div class="record"><div class="record-rings"><div class="record-label"><span>TRACK<br/>ROOM</span><small>VOL. 001</small></div></div></div>
+          <div class="record-caption">GOOD MUSIC<br/>IS BETTER SHARED <span>↗</span></div>
+          <div class="record-spark">✳</div>
+        </div>
+      </section>
+      <section class="entry-card">
+        <div class="entry-header"><span class="tag">GET STARTED</span><h2>어디서 시작할까?</h2><p>이름만 입력하면 바로 시작할 수 있어.</p></div>
+        <label class="field-label" for="nickname">내 닉네임</label>
+        <input id="nickname" maxlength="20" placeholder="친구들에게 보일 이름" autocomplete="nickname" />
+        <div class="entry-divider"><span>새로운 방 만들기</span></div>
+        <form id="createForm">
+          <label class="field-label" for="roomName">방 이름</label>
+          <input id="roomName" maxlength="40" placeholder="예: 금요일의 오노추 🎧" required />
+          <button type="submit" class="btn btn-primary btn-wide">우리만의 추천방 만들기 <span>↗</span></button>
+        </form>
+        <div class="entry-divider"><span>이미 초대받았다면</span></div>
+        <form id="joinForm">
+          <label class="field-label" for="roomCodeInput">초대 코드</label>
+          <input id="roomCodeInput" class="code-field" maxlength="8" placeholder="8자리 코드 입력" autocapitalize="characters" required />
+          <button type="submit" class="btn btn-outline btn-wide">추천방 참여하기 <span>→</span></button>
+        </form>
+        <p class="entry-footnote"><span>✦</span> 음악 파일은 저장하지 않아. 곡 정보와 추천 링크만 공유해.</p>
+      </section>
+    </main>
+
+    <main id="roomView" class="room-view hidden">
+      <div class="room-hero">
+        <div>
+          <div class="eyebrow room-eyebrow"><span class="eyebrow-line"></span> YOUR PRIVATE LISTENING CLUB</div>
+          <h1 id="roomTitle">추천방</h1>
+          <div class="room-meta"><span><span class="signal-dot"></span> <b id="memberCount">0</b>명 참여</span><span class="mid-dot">•</span><span>ROOM <b id="roomCodeText">────────</b></span></div>
+        </div>
+        <button type="button" class="btn btn-primary share-btn" id="shareBtn"><span class="copy-symbol">⧉</span> 초대 링크 복사</button>
+      </div>
+      <div class="room-layout">
+        <section class="song-section">
+          <div class="section-heading">
+            <div><div class="mini-heading">THE ROTATION</div><h2>우리의 추천곡 <span id="songTotal">0</span></h2></div>
+            <div class="sort-controls"><button id="sortRecent" class="sort active" type="button">최신순</button><button id="sortLikes" class="sort" type="button">인기순</button></div>
+          </div>
+          <div id="songList" class="song-list"><div class="empty-list">곡을 불러오는 중...</div></div>
+        </section>
+        <aside class="add-panel">
+          <div class="panel-decor" aria-hidden="true">✳</div>
+          <div class="mini-heading">DROP A TRACK</div>
+          <h2>이 노래,<br/>너도 들어봐.</h2>
+          <p class="panel-intro">내가 좋아하는 곡과 추천하는 이유를 공유해줘.</p>
+          <form id="addSongForm">
+            <label class="field-label" for="songTitle">노래 제목 <span class="required">*</span></label>
+            <input id="songTitle" maxlength="120" placeholder="곡 제목" required />
+            <label class="field-label" for="artist">아티스트 <span class="required">*</span></label>
+            <input id="artist" maxlength="120" placeholder="가수 / 아티스트" required />
+            <label class="field-label" for="musicUrl">음원 링크 <span class="optional">선택</span></label>
+            <input id="musicUrl" maxlength="500" type="url" placeholder="Spotify, 멜론, YouTube 등" />
+            <label class="field-label" for="note">추천 한마디 <span class="optional">선택</span></label>
+            <textarea id="note" maxlength="500" rows="3" placeholder="이 곡을 추천하는 이유, 듣기 좋은 순간..."></textarea>
+            <div class="favorite-title">좋아하는 구간 <span class="optional">선택 · 재생 연동은 추후 지원</span></div>
+            <div class="time-fields"><div><label class="field-label" for="startTime">시작</label><input id="startTime" placeholder="1:20" inputmode="text" /></div><span class="range-dash">—</span><div><label class="field-label" for="endTime">끝</label><input id="endTime" placeholder="1:50" inputmode="text" /></div></div>
+            <button class="btn btn-primary btn-wide add-submit" type="submit">+ 추천곡 등록하기</button>
+          </form>
+          <div class="panel-foot">NO AUDIO UPLOADS. JUST GOOD TASTE. ☺</div>
+        </aside>
+      </div>
+      <footer class="room-footer">MADE FOR THE SONGS WE WANT EVERYONE TO HEAR <span>✳</span></footer>
+    </main>
+    <footer id="landingFooter" class="landing-footer">TRACKROOM <span>©</span> GOOD TASTE IS CONTAGIOUS.</footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
