@@ -562,6 +562,57 @@ async function resolveSearchCovers(seq) {
     `${catalogResults.length}곡 발견 · 커버 확인 완료 · 곡을 눌러 선택해 줘.`;
 }
 
+function artistPortrait(artist, header = false) {
+  const initials = escaped(String(artist?.title || '♪').trim().slice(0,2).toUpperCase());
+  const src = artist?.artworkUrl ? escaped(artist.artworkUrl) : '';
+  const avatarClass = header ? 'catalog-album-cover catalog-artist-header-avatar' : 'catalog-artist-avatar';
+  const photo = src ? `<img class="catalog-artist-photo" src="${src}" loading="lazy" referrerpolicy="no-referrer" alt="" onerror="this.remove()" />` : '';
+  return `<span class="${avatarClass}" aria-hidden="true"><span class="catalog-artist-initials">${initials}</span>${photo}</span>`;
+}
+
+async function resolveArtistPhotos(seq, query) {
+  try {
+    const data = await api(`/api/catalog/artist-photos?${new URLSearchParams({q:query})}`);
+    if (seq !== searchCounter || catalogView !== 'artist-profiles') return;
+    const photos = data.photos || {};
+    const normalize = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+    let updated = false;
+    for (const artist of catalogResults) {
+      const art = photos[normalize(artist.title)];
+      if (art && !artist.artworkUrl) {
+        artist.artworkUrl = art;
+        updated = true;
+      }
+    }
+    if (updated) renderCatalogResults();
+  } catch { /* Portraits are optional; initials always remain usable. */ }
+}
+
+function renderArtistAlbums(info) {
+  const panel = $('catalogArtistAlbums');
+  const albums = Array.isArray(info?.albums) ? info.albums : [];
+  panel.classList.remove('hidden');
+  if (!albums.length) {
+    panel.innerHTML = `<div class="catalog-discography-head"><strong>참여 앨범</strong><small>${escaped(info?.albumError || '카탈로그에서 확인된 앨범이 없어.')}</small></div>`;
+    return;
+  }
+  const cards = albums.map((album,i) => {
+    const art = album.artworkUrl
+      ? `<img src="${escaped(highResArtworkUrl(album.artworkUrl))}" loading="lazy" alt="" data-original-src="${escaped(album.artworkUrl)}" onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src=this.dataset.originalSrc}else{this.remove()}" />`
+      : `<span class="catalog-discography-placeholder" aria-hidden="true">♫</span>`;
+    const tag = album.participationType === 'credited' ? '참여' : '앨범';
+    const year = String(album.releaseDate || '').slice(0,4);
+    return `<button type="button" class="catalog-discography-card" data-album-index="${i}" aria-label="${escaped(album.title)} 앨범 수록곡 보기"><span class="catalog-discography-art">${art}</span><strong>${escaped(album.title)}</strong><small>${escaped(album.artist)}${year ? ' · '+escaped(year) : ''}</small><em>${tag}</em></button>`;
+  }).join('');
+  panel.innerHTML = `<div class="catalog-discography-head"><strong>참여 앨범</strong><small>${albums.length}개 확인 · 앨범을 누르면 수록곡을 볼 수 있어.</small></div><div class="catalog-discography-grid">${cards}</div><div class="catalog-discography-head catalog-artist-track-heading"><strong>아티스트 곡</strong><small>곡 제목을 선택하면 추천할 수 있어.</small></div>`;
+}
+
+function hideArtistAlbums() {
+  const panel = $('catalogArtistAlbums');
+  panel.classList.add('hidden');
+  panel.innerHTML = '';
+}
+
 // Keep track-selection and album-navigation as separate actions.
 // The artwork is a button; the adjacent title/details button still selects
 // a track for recommendation. Album-search results open the album either way.
@@ -591,9 +642,8 @@ function renderCatalogResults() {
   $('catalogResults').innerHTML = entries.map(({song,index:i}) => {
     const label = escaped(song.title);
     if (song.itemType === 'artist') {
-      const monogram = escaped(String(song.title || '♪').trim().slice(0,2).toUpperCase());
       const descriptor = song.genre ? escaped(song.genre) : escaped(catalogLabel(song.sourceCatalog));
-      return `<div class="catalog-result catalog-artist-result" data-track-index="${i}" role="listitem"><button class="catalog-artist-main" type="button" data-index="${i}" data-catalog-action="artist" aria-label="${label} 아티스트 프로필과 곡 보기"><span class="catalog-artist-avatar" aria-hidden="true">${monogram}</span><span class="catalog-result-info"><strong>${label}</strong><span>아티스트 프로필</span><small>${descriptor}</small></span><span class="catalog-choose">프로필 ↗</span></button></div>`;
+      return `<div class="catalog-result catalog-artist-result" data-track-index="${i}" role="listitem"><button class="catalog-artist-main" type="button" data-index="${i}" data-catalog-action="artist" aria-label="${label} 아티스트의 앨범과 곡 보기">${artistPortrait(song)}<span class="catalog-result-info"><strong>${label}</strong><span>아티스트 프로필</span><small>${descriptor}</small></span><span class="catalog-choose">프로필 ↗</span></button></div>`;
     }
     const isAlbum = song.itemType === 'album';
     const art = song.artworkUrl
@@ -616,6 +666,7 @@ function clearAlbumNavigation() {
   $('albumBack').classList.add('hidden');
   $('catalogAlbumHeader').classList.add('hidden');
   $('catalogAlbumHeader').innerHTML = '';
+  hideArtistAlbums();
   $('catalogSortRow').classList.remove('hidden');
 }
 function renderAlbumInfo(album) {
@@ -626,11 +677,11 @@ function renderAlbumInfo(album) {
   $('catalogAlbumHeader').classList.remove('hidden');
 }
 function renderArtistInfo(artist) {
-  const monogram = escaped(String(artist.title||'♪').trim().slice(0,2).toUpperCase());
   const genre = artist.genre ? `<span>${escaped(artist.genre)}</span>` : '';
   const external = artist.musicUrl ? `<a href="${escaped(artist.musicUrl)}" target="_blank" rel="noopener noreferrer">아티스트 공식 카탈로그 ↗</a>` : '';
-  $('catalogAlbumHeader').innerHTML = `<div class="catalog-album-cover catalog-artist-header-avatar" aria-hidden="true">${monogram}</div><div class="catalog-album-info"><div class="catalog-album-eyebrow">ARTIST · 아티스트 프로필</div><strong>${escaped(artist.title)}</strong>${genre}<small>카탈로그에서 확인된 ${Number(artist.trackCount)||catalogResults.length}곡 · 곡을 선택해 추천할 수 있어.</small>${external}</div>`;
+  $('catalogAlbumHeader').innerHTML = `${artistPortrait(artist,true)}<div class="catalog-album-info"><div class="catalog-album-eyebrow">ARTIST · 아티스트 프로필</div><strong>${escaped(artist.title)}</strong>${genre}<small>참여 앨범 ${Number(artist.albumCount)||0}개 · 확인된 곡 ${Number(artist.trackCount)||0}곡</small>${external}</div>`;
   $('catalogAlbumHeader').classList.remove('hidden');
+  renderArtistAlbums(artist);
 }
 function snapshotCatalog() {
   return { results:[...catalogResults], status:$('searchStatus').textContent,
@@ -649,7 +700,10 @@ function enterCatalogView(view, results, info, status) {
     : '← 이전 결과로 돌아가기';
   $('albumBack').classList.remove('hidden');
   if (view === 'artist-tracks') renderArtistInfo(info);
-  else if (view === 'album-tracks') renderAlbumInfo(info);
+  else {
+    hideArtistAlbums();
+    if (view === 'album-tracks') renderAlbumInfo(info);
+  }
   renderCatalogResults();
   $('catalogResults').scrollTop = 0;
 }
@@ -664,10 +718,10 @@ async function openArtistFromResult(artist, trigger) {
     });
     if (seq !== searchCounter) return;
     const info = result.artistInfo || {title:artist.title,genre:artist.genre,musicUrl:artist.musicUrl,
-      trackCount:result.results?.length||0};
+      artworkUrl:artist.artworkUrl, albums:[], albumCount:0, trackCount:result.results?.length||0};
     $('searchStatus').textContent = originalStatus;
     enterCatalogView('artist-tracks',result.results||[],info,
-      `「${info.title}」 아티스트 · ${result.results?.length||0}곡 · 원하는 곡을 선택해 줘.`);
+      `「${info.title}」 · 앨범 ${info.albumCount||0}개 · 곡 ${result.results?.length||0}개 · 앨범이나 곡을 선택해 줘.`);
     if (artist.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
   } catch(error) {
     if (seq !== searchCounter) return;
@@ -712,10 +766,13 @@ function backToAlbumResults() {
   catalogViewInfo = previous.info;
   $('searchStatus').textContent = previous.status;
   if (catalogView === 'artist-tracks') renderArtistInfo(catalogViewInfo);
-  else if (catalogView === 'album-tracks') renderAlbumInfo(catalogViewInfo);
   else {
-    $('catalogAlbumHeader').classList.add('hidden');
-    $('catalogAlbumHeader').innerHTML = '';
+    hideArtistAlbums();
+    if (catalogView === 'album-tracks') renderAlbumInfo(catalogViewInfo);
+    else {
+      $('catalogAlbumHeader').classList.add('hidden');
+      $('catalogAlbumHeader').innerHTML = '';
+    }
   }
   $('albumBack').classList.toggle('hidden', !catalogHistory.length);
   if (catalogHistory.length) $('albumBack').textContent = '← 이전 결과로 돌아가기';
@@ -745,6 +802,7 @@ async function searchSongs(event) {
       ? `${catalogResults.length}${kind === 'artist' ? '개 아티스트 프로필 발견 · 프로필을 누르면 해당 아티스트의 곡을 볼 수 있어.' : kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 인기순(검색 순위 기준)·최신순(발매일 기준)으로 정렬할 수 있어.'}`
       : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
     renderCatalogResults();
+    if (kind === 'artist' && catalogResults.length) void resolveArtistPhotos(seq, q);
     if (platform === 'lastfm' && kind === 'track') void resolveSearchCovers(seq);
   } catch (error) {
     if (seq !== searchCounter) return;
@@ -858,6 +916,12 @@ async function init() {
     }
   });
   $('catalogResults').addEventListener('click', selectSearchResult);
+  $('catalogArtistAlbums').addEventListener('click', async event => {
+    const trigger = event.target.closest('[data-album-index]');
+    if (!trigger || trigger.disabled || catalogView !== 'artist-tracks') return;
+    const album = catalogViewInfo?.albums?.[Number(trigger.dataset.albumIndex)];
+    if (album?.selectionToken) await openAlbumFromResult(album, trigger);
+  });
   $('catalogSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); clearAlbumNavigation(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
   $('songQuery').addEventListener('input', () => {
     ++searchCounter;

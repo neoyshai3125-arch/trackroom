@@ -722,6 +722,68 @@ def normalize_apple_artist(row, country):
     }
 
 
+
+# iTunes artist profiles do not include portraits. Deezer can return an actual
+# artist portrait, but only associate it with an EXPLICIT matching artist name.
+# If it is missing or unreachable, the UI keeps its circular monogram.
+ARTIST_PHOTO_CACHE = {}
+ARTIST_PHOTO_LOCK = threading.Lock()
+
+
+def safe_artist_photo(url):
+    try:
+        parsed = urlparse(url)
+        return url if (parsed.scheme == 'https' and parsed.hostname in
+                       ('cdn-images.dzcdn.net', 'e-cdns-images.dzcdn.net')) else ''
+    except (TypeError, ValueError):
+        return ''
+
+
+def artist_photo_matches(query):
+    key = artwork_key(query)
+    if not key:
+        return {}
+    with ARTIST_PHOTO_LOCK:
+        entry = ARTIST_PHOTO_CACHE.get(key)
+        if entry and entry[0] > time.time():
+            return dict(entry[1])
+    # Network/image outages must never break normal Apple/iTunes artist search.
+    photos = {}
+    try:
+        url = 'https://api.deezer.com/search/artist?' + urllib.parse.urlencode(
+            {'q': query, 'limit': 100})
+        data = request_json(url, headers={'User-Agent':'TRACKROOM/0.61'}, timeout=5)
+        for row in (data.get('data') or []):
+            if not isinstance(row, dict):
+                continue
+            name = artwork_key(row.get('name'))
+            img = safe_artist_photo(row.get('picture_big') or row.get('picture_medium') or '')
+            if name and img:
+                photos[name] = img
+    except (APIError, ValueError, TypeError, KeyError):
+        pass
+    with ARTIST_PHOTO_LOCK:
+        if len(ARTIST_PHOTO_CACHE) > 250:
+            ARTIST_PHOTO_CACHE.clear()
+        ARTIST_PHOTO_CACHE[key] = (time.time() + (12*3600 if photos else 10*60), photos)
+    return photos
+
+
+def enrich_artist_photos(profiles, query):
+    """Return cached portraits without slowing the primary iTunes search.
+
+    Browser requests an optional progressive photo enrichment after profiles
+    load. This deliberately makes Apple catalog search independent of Deezer.
+    """
+    key = artwork_key(query)
+    with ARTIST_PHOTO_LOCK:
+        entry = ARTIST_PHOTO_CACHE.get(key)
+        images = dict(entry[1]) if entry and entry[0] > time.time() else {}
+    for artist in profiles:
+        artist['artworkUrl'] = images.get(artwork_key(artist.get('title')), '')
+    return profiles
+
+
 def search_artists(platform, query):
     """Return artist *profiles*, never song suggestions."""
     if platform == 'apple':
@@ -738,7 +800,7 @@ def search_artists(platform, query):
             item['searchRank']=len(artists)
             artists.append(item)
             if len(artists)>=SEARCH_RESULT_LIMIT:break
-        return artists
+        return enrich_artist_photos(artists, query)
     if platform == 'lastfm':
         obj=lastfm_api('artist.search', artist=query, limit=SEARCH_RESULT_LIMIT)
         matches=(obj.get('results') or {}).get('artistmatches') or {}
@@ -763,7 +825,7 @@ def search_artists(platform, query):
                 'album':'','musicUrl':link[:500],'artworkUrl':'','genre':'',
                 'searchRank':len(artists),'durationMs':None,'isrc':''})
             if len(artists)>=SEARCH_RESULT_LIMIT:break
-        return artists
+        return enrich_artist_photos(artists, query)
     raise APIError('아티스트 검색을 지원하지 않는 플랫폼이야.',422)
 
 
@@ -845,6 +907,133 @@ def artist_tracks(artist):
             if len(tracks)>=SEARCH_RESULT_LIMIT:break
         return tracks
     raise APIError('이 검색 엔진에서는 아티스트 곡 조회를 지원하지 않아.',422)
+
+
+
+
+def artist_album_record_from_track(track, country, credited=False):
+    """Use Apple's verified collectionId, never guess an album from its title."""
+    album_id = str(track.get('albumId') or '')
+    if not album_id.isdigit() or not track.get('album'):
+        return None
+    link = str(track.get('musicUrl') or '')
+    try:
+        parsed = urlparse(link)
+        if parsed.scheme != 'https' or parsed.hostname not in ('itunes.apple.com','music.apple.com'):
+            return None
+    except (ValueError, TypeError):
+        return None
+    return {'itemType':'album','sourcePlatform':'apple','sourceCatalog':'itunes_store',
+            'sourceId':album_id,'albumId':album_id,'storeCountry':country,
+            'title':str(track['album'])[:120], 'artist':str(track.get('artist') or '')[:120],
+            'album':str(track['album'])[:120], 'musicUrl':link[:500],
+            'artworkUrl':safe_artwork(track.get('artworkUrl','')),
+            'releaseDate':track.get('releaseDate',''), 'durationMs':None, 'isrc':'',
+            'participationType':'credited' if credited else 'main'}
+
+
+def artist_is_credited(row, artist):
+    """Match an explicit contributor credit, not a loose name substring."""
+    name = str(artist.get('title') or artist.get('artist') or '').strip()
+    if not name:
+        return False
+    aid = str(artist.get('sourceId') or '')
+    row_aid = str(row.get('artistId') or '')
+    if row_aid and row_aid == aid:
+        return True
+    canonical = artwork_key(name)
+    credit = str(row.get('artistName') or '')
+    # Multi-artist credits use these separators. Avoid attributing 'NewJeans
+    # tribute' or names containing a short common name such as IU to that artist.
+    parts = re.split(r'\s*(?:,|&|/|\+|×|;|\bfeat\.?\b|\bft\.?\b|\bwith\b|\band\b)\s*',
+                     credit, flags=re.IGNORECASE)
+    if any(artwork_key(part) == canonical for part in parts):
+        return True
+    title = str(row.get('trackName') or '')
+    # Title credit must explicitly say feat/ft/with before the exact artist.
+    for match in re.finditer(r'(?:feat\.?|ft\.?|featuring|with)\s+([^\)\]\-]+)',title,re.I):
+        for part in re.split(r'\s*(?:,|&|/|\+|×|;)\s*', match.group(1)):
+            if artwork_key(part) == canonical:
+                return True
+    return False
+
+
+def artist_albums(artist, tracks=None):
+    """Artist releases and credited collaborations; browse via signed album IDs."""
+    if artist.get('itemType') != 'artist':
+        raise APIError('아티스트 프로필을 먼저 선택해 줘.', 422)
+    if artist.get('sourcePlatform') == 'lastfm':
+        payload = lastfm_api('artist.getTopAlbums', artist=artist['artist'], limit=80, autocorrect=0)
+        rows = (payload.get('topalbums') or {}).get('album') or []
+        if isinstance(rows, dict): rows = [rows]
+        result = []
+        seen = set()
+        for row in rows if isinstance(rows,list) else []:
+            if not isinstance(row,dict): continue
+            title = row.get('name') or ''
+            owner = row.get('artist') or artist['artist']
+            owner = (owner.get('name') or owner.get('#text') or '') if isinstance(owner,dict) else owner
+            url = str(row.get('url') or '').replace('http://','https://',1)
+            if not (isinstance(title,str) and title.strip() and artwork_key(owner)==artwork_key(artist['artist'])
+                    and valid_lastfm_url(url)):
+                continue
+            key = artwork_key(title)
+            if key in seen:continue
+            seen.add(key)
+            result.append({'itemType':'album','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+                'sourceId':str(row.get('mbid') or ('url-'+hashlib.sha256(url.encode()).hexdigest()[:32])),
+                'title':title[:120], 'artist':owner[:120], 'album':title[:120],
+                'musicUrl':url[:500], 'artworkUrl':'', 'isrc':'', 'durationMs':None,
+                'participationType':'main'})
+            if len(result)>=80: break
+        return result
+    if artist.get('sourcePlatform') != 'apple':
+        return []
+    aid = str(artist.get('sourceId') or '')
+    country = artist.get('storeCountry','US')
+    if not aid.isdigit() or country not in ('US','JP'):
+        raise APIError('유효한 아티스트 정보를 다시 선택해 줘.', 422)
+    albums={}
+    # Apple's own catalog: authoritative artist ID -> albums lookup.
+    with APPLE_QUERY_LOCK:
+        wait=max(0.0, APPLE_NEXT_QUERY[0]-time.monotonic())
+        if wait:time.sleep(wait)
+        APPLE_NEXT_QUERY[0]=time.monotonic()+APPLE_MIN_INTERVAL
+    url='https://itunes.apple.com/lookup?' + urllib.parse.urlencode(
+        {'id':aid,'entity':'album','country':country,'limit':200})
+    rows=request_json(url,headers={'User-Agent':'TRACKROOM/0.61'},timeout=10).get('results',[])
+    for row in rows:
+        if not isinstance(row,dict):continue
+        if row.get('wrapperType') != 'collection':continue
+        # Collection IDs and the parent artist ID prevent homonyms mixing.
+        if str(row.get('artistId') or '') not in ('',aid):continue
+        album=normalize_apple_record(row,country,'album')
+        if album:
+            album['participationType']='main'
+            albums[album['sourceId']]=album
+    # Track-scoped album IDs cover soundtracks and artist collaborations which
+    # may be absent from the artist's album lookup index.
+    for track in tracks if isinstance(tracks,list) else []:
+        album=artist_album_record_from_track(track,country)
+        if album and album['sourceId'] not in albums:
+            albums[album['sourceId']]=album
+    # Discover explicitly credited features from the catalog search index.
+    # Not every guest credit is available; never attribute uncredited work.
+    try:
+        extra = apple_search_request(artist['artist'],country,'song',200,'artistTerm')
+    except APIError:
+        extra = []
+    for raw in extra:
+        if not isinstance(raw,dict) or raw.get('kind') != 'song':continue
+        if not artist_is_credited(raw,artist):continue
+        track=normalize_apple_record(raw,country,'track')
+        if not track:continue
+        album=artist_album_record_from_track(track,country,
+                credited=(str(raw.get('artistId') or '')!=aid))
+        if album and album['sourceId'] not in albums:
+            albums[album['sourceId']]=album
+    result=sorted(albums.values(),key=lambda x: (x.get('releaseDate') or '',x.get('title') or ''),reverse=True)
+    return result[:100]
 
 
 def apple_dedupe_key(record):
@@ -1482,14 +1671,37 @@ class Handler(BaseHTTPRequestHandler):
                 'selectionToken': sign_selection(selection, user['id'])
             })
 
+        if method == 'GET' and route == '/api/catalog/artist-photos':
+            q = parse_qs(parsed.query).get('q', [''])[0].strip()
+            if not 2 <= len(q) <= 80:
+                raise APIError('아티스트 이름을 확인해 줘.',422)
+            search_rate_limit(user['id'])
+            # Names are exact-match keys; never assign a photo by fuzzy rank.
+            return self.send_json({'photos': artist_photo_matches(q)})
+
         if method == 'POST' and route == '/api/catalog/artist-tracks':
             selection = verify_selection(self.body().get('selectionToken'), user['id'])
             if selection.get('itemType') != 'artist':
                 raise APIError('아티스트 검색에서 프로필을 선택해 줘.',422)
             search_rate_limit(user['id'])
             tracks = artist_tracks(selection)
+            try:
+                albums = artist_albums(selection, tracks)
+                album_error = ''
+            except APIError:
+                # Missing album lookup must not hide valid songs.
+                albums = []
+                album_error = '앨범 목록을 불러오지 못했어. 나중에 다시 확인해 줘.'
+            # Search listing photo can be absent if the query didn't match
+            # Deezer's index. Retry with selected artist's exact name.
+            photo = safe_artist_photo(selection.get('artworkUrl',''))
+            if not photo:
+                photo = artist_photo_matches(selection['artist']).get(artwork_key(selection['artist']), '')
             return self.send_json({'artistInfo':{
                 'title':selection['title'],'genre':selection.get('genre',''),
+                'artworkUrl':photo,
+                'albums':[{**album,'selectionToken':sign_selection(album,user['id'])} for album in albums],
+                'albumCount':len(albums), 'albumError':album_error,
                 'musicUrl':selection.get('musicUrl',''), 'trackCount':len(tracks),
                 'sourceCatalog':selection.get('sourceCatalog','')},
                 'results':[{**song,'selectionToken':sign_selection(song,user['id'])} for song in tracks]})
