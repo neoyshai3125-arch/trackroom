@@ -595,6 +595,7 @@ async function init() {
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
   $('catalogSearchForm').addEventListener('submit', searchSongs);
+  $('catalogResults').addEventListener('click', selectSearchResult);
   $('lastfmSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
   $('songQuery').addEventListener('input', () => {
     ++searchCounter;
