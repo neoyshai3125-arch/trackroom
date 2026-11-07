@@ -279,6 +279,7 @@ function renderBubbleDetail(song) {
     <div class="bubble-detail-actions">
       <button type="button" class="like bubble-like${song.liked ? ' liked':''}" data-action="like" data-id="${song.id}" aria-label="좋아요 ${song.likeCount}개">${song.liked ? '♥' : '♡'} ${song.likeCount}</button>
       ${song.musicUrl ? `<a class="bubble-link" href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer">${escaped(provider)}에서 보기 ↗</a>` : ''}
+      ${song.artworkStoreUrl ? `<a class="bubble-link bubble-link-apple" href="${escaped(song.artworkStoreUrl)}" target="_blank" rel="noopener noreferrer">iTunes Store에서 보기 ↗</a>` : ''}
       ${owned ? `<button type="button" class="icon-plain bubble-delete" data-action="delete" data-id="${song.id}">삭제</button>` : ''}
     </div>`;
   $('bubbleDetail').classList.remove('hidden');
@@ -403,6 +404,17 @@ function initBubbleCanvas() {
     else return;
     e.preventDefault(); applyBubbleCamera();
   });
+  $('bubbleRestoreCovers').addEventListener('click', async () => {
+    if (!state.roomCode) return;
+    const button = $('bubbleRestoreCovers');
+    button.disabled = true;
+    try {
+      const data = await api(`/api/rooms/${state.roomCode}/covers/restore`, {method:'POST',body:'{}'});
+      await refreshRoom();
+      toast(data.updated ? `${data.updated}곡의 앨범 커버를 복구했어!` : '일치하는 앨범 커버를 찾지 못했어.');
+    } catch(e) { toast(e.message,true); }
+    finally { button.disabled = false; }
+  });
   $('bubbleZoomIn').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom*1.2));
   $('bubbleZoomOut').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom/1.2));
   $('bubbleReset').addEventListener('click',()=>{bubbleCanvasCamera={x:0,y:0,zoom:1};applyBubbleCamera();closeBubbleDetail();});
@@ -474,7 +486,7 @@ function clearSelected() {
 }
 function renderSelected(track) {
   const art = track.artworkUrl ? `<img src="${escaped(track.artworkUrl)}" alt="앨범 커버" />` : '<span class="no-art">♫</span>';
-  $('selectedTrack').innerHTML = `<div class="chosen-cover">${art}</div><div class="chosen-info"><small>✓ 선택된 음원 · ${escaped(catalogLabel(track.sourceCatalog))}</small><strong>${escaped(track.title)}</strong><span>${escaped(track.artist)}</span><a href="${escaped(track.musicUrl)}" target="_blank" rel="noopener noreferrer">원본 음원 확인 ↗</a></div><button class="chosen-clear" type="button" id="clearTrack" aria-label="선택 취소">✕</button>`;
+  $('selectedTrack').innerHTML = `<div class="chosen-cover">${art}</div><div class="chosen-info"><small>✓ 선택된 음원 · ${escaped(catalogLabel(track.sourceCatalog))}</small><strong>${escaped(track.title)}</strong><span>${escaped(track.artist)}</span><a href="${escaped(track.musicUrl)}" target="_blank" rel="noopener noreferrer">원본 음원 확인 ↗</a>${track.artworkStoreUrl ? `<a href="${escaped(track.artworkStoreUrl)}" target="_blank" rel="noopener noreferrer">iTunes Store에서 보기 ↗</a>` : ''}</div><button class="chosen-clear" type="button" id="clearTrack" aria-label="선택 취소">✕</button>`;
   $('selectedTrack').classList.remove('hidden');
   $('songFormExtra').classList.remove('hidden');
   $('submitSong').disabled = false;

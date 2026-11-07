@@ -107,3 +107,8 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
   .add-panel.panel-open{transform:translateY(0);}
 }
 @media(prefers-reduced-motion:reduce){.add-panel,.bubble-sphere{transition:none!important}}
+
+/* Artwork recovery control */
+.bubble-link-apple{color:#f2dfb0}
+.canvas-covers{font-size:19px!important}
+.canvas-covers:disabled{opacity:.4;cursor:wait}

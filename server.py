@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import re
+import unicodedata
 import secrets
 import sqlite3
 import threading
@@ -131,6 +132,7 @@ def init_db():
             for column, kind in (
                 ('source_platform', 'TEXT'), ('source_id', 'TEXT'),
                 ('source_catalog', 'TEXT'), ('artwork_url', 'TEXT'),
+                ('artwork_store_url', 'TEXT'), ('artwork_checked_at', 'INTEGER'),
                 ('album_name', 'TEXT'), ('duration_ms', 'INTEGER'), ('isrc', 'TEXT')
             ):
                 conn.execute(f'ALTER TABLE songs ADD COLUMN IF NOT EXISTS {column} {kind}')
@@ -142,6 +144,7 @@ def init_db():
             for column, kind in (
                 ('source_platform', 'TEXT'), ('source_id', 'TEXT'),
                 ('source_catalog', 'TEXT'), ('artwork_url', 'TEXT'),
+                ('artwork_store_url', 'TEXT'), ('artwork_checked_at', 'INTEGER'),
                 ('album_name', 'TEXT'), ('duration_ms', 'INTEGER'), ('isrc', 'TEXT')
             ):
                 if column not in columns:
@@ -237,7 +240,8 @@ def list_room(conn, code, user_id):
             'musicUrl': s['music_url'], 'note': s['note'],
             'sourcePlatform': s['source_platform'], 'sourceCatalog': s['source_catalog'],
             'sourceId': s['source_id'], 'album': s['album_name'],
-            'artworkUrl': s['artwork_url'], 'durationMs': s['duration_ms'],
+            'artworkUrl': s['artwork_url'], 'artworkStoreUrl': s['artwork_store_url'],
+            'durationMs': s['duration_ms'],
             'isrc': s['isrc'],
             'startSeconds': s['start_seconds'], 'endSeconds': s['end_seconds'],
             'createdAt': s['created_at'], 'likeCount': s['like_count'], 'liked': bool(s['liked'])
@@ -271,10 +275,109 @@ def safe_artwork(url):
         return ''
 
 
-def request_json(url, headers=None, data=None, method=None):
+
+# iTunes artwork is matched *separately* from Last.fm search results.
+# It is not Last.fm artwork; using Last.fm API-returned images is excluded
+# under the Last.fm API terms. Only show an Apple match if title AND artist agree.
+ARTWORK_LOOKUP_CACHE = {}
+ARTWORK_LOOKUP_LOCK = threading.Lock()
+
+
+def artwork_key(value):
+    value = unicodedata.normalize('NFKC', str(value or '')).casefold()
+    # Ignore conventional 'feat' annotations, not substantive title subtitles.
+    value = re.sub(r'\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring)\b[^\)\]]*[\)\]]', '', value)
+    return re.sub(r'[^\w]+', '', value, flags=re.UNICODE)
+
+
+def same_artist(found, wanted):
+    a, b = artwork_key(found), artwork_key(wanted)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # E.g. "IU & SUGA", "IU feat. SUGA"; no substring matches (IU != LUI).
+    names = re.split(r'\s+(?:feat\.?|ft\.?|featuring|and|x)\s+|\s*[,/&+]\s*', str(found), flags=re.I)
+    return b in {artwork_key(name) for name in names}
+
+
+def itunes_matches(tracks, query, max_calls=2, limit=150):
+    """At most two storefront searches for one user search. No art if uncertain.
+
+    Return mapping of result indices to {url, storeUrl, album}. Apple content is
+    promotional and must have an Apple Store link near displayed artwork.
+    """
+    matches = {}
+    for country in ('US', 'JP')[:max_calls]:
+        if len(matches) >= len(tracks):
+            break
+        url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
+            'term': query, 'country': country, 'media': 'music', 'entity': 'song',
+            'limit': limit
+        })
+        try:
+            data = request_json(url, headers={'User-Agent': 'TRACKROOM/0.5'}, timeout=3)
+        except (APIError, ValueError, TypeError):
+            continue  # Artwork is optional; it must never break Last.fm search.
+        results = data.get('results', []) if isinstance(data, dict) else []
+        index = {}
+        for item in results:
+            if not isinstance(item, dict) or item.get('kind') != 'song':
+                continue
+            title = artwork_key(item.get('trackName'))
+            artist = item.get('artistName', '')
+            art = safe_artwork(item.get('artworkUrl100', ''))
+            link = item.get('trackViewUrl', '')
+            if not title or not art or not isinstance(link, str):
+                continue
+            try:
+                u = urlparse(link)
+            except (TypeError, ValueError):
+                continue
+            if u.scheme != 'https' or u.hostname not in ('music.apple.com','itunes.apple.com'):
+                continue
+            index.setdefault(title, []).append((artist, art, link, item.get('collectionName') or ''))
+        for i, track in enumerate(tracks):
+            if i in matches: continue
+            for artist, art, link, album in index.get(artwork_key(track.get('title')), []):
+                if same_artist(artist, track.get('artist')):
+                    # 100x100 can be expanded by the Apple CDN without saving/copying.
+                    high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
+                    matches[i] = {'url': safe_artwork(high_res) or art, 'storeUrl': link,
+                                  'album': str(album)[:120]}
+                    break
+    return matches
+
+
+def enrich_lastfm_results(results, query):
+    found = itunes_matches(results, query)
+    for i, meta in found.items():
+        results[i]['artworkUrl'] = meta['url']
+        results[i]['artworkStoreUrl'] = meta['storeUrl']
+        results[i]['album'] = meta['album']
+    return results
+
+
+def find_itunes_cover(title, artist):
+    """One selected/previously saved track; cache both matches and misses 6h."""
+    key = (artwork_key(title), artwork_key(artist))
+    if not all(key): return {}
+    current = time.time()
+    with ARTWORK_LOOKUP_LOCK:
+        old = ARTWORK_LOOKUP_CACHE.get(key)
+        if old and old[0] > current:
+            return old[1]
+    item = {'title': title, 'artist': artist}
+    match = itunes_matches([item], f'{title} {artist}', limit=75).get(0, {})
+    with ARTWORK_LOOKUP_LOCK:
+        if len(ARTWORK_LOOKUP_CACHE) > 1000: ARTWORK_LOOKUP_CACHE.clear()
+        ARTWORK_LOOKUP_CACHE[key] = (time.time() + 6*3600, match)
+    return match
+
+def request_json(url, headers=None, data=None, method=None, timeout=8):
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=8) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
@@ -344,7 +447,7 @@ def search_catalog(platform, query, search_mode='track'):
             return {'sourcePlatform': 'lastfm', 'sourceCatalog': 'lastfm',
                     'sourceId': source_id, 'title': title.strip()[:120],
                     'artist': artist.strip()[:120], 'album': '',
-                    'musicUrl': music_url[:500], 'artworkUrl': '',
+                    'musicUrl': music_url[:500], 'artworkUrl': '', 'artworkStoreUrl': '',
                     'durationMs': None, 'isrc': ''}
         def unpack(obj, method):
             if method == 'track.search':
@@ -376,7 +479,7 @@ def search_catalog(platform, query, search_mode='track'):
             results.append(result)
             if len(results) >= 15:
                 break
-        return results
+        return enrich_lastfm_results(results, query)
     if platform == 'spotify':
         token = spotify_access_token()
         url = 'https://api.spotify.com/v1/search?' + urllib.parse.urlencode({
@@ -687,6 +790,34 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute('INSERT INTO members VALUES (?,?,?,?)', (code, user['id'], user['nickname'], now()))
             return self.send_json({'code': code}, 201)
 
+        # Recover covers for songs added before artwork matching was enabled.
+        # Explicit action to avoid dozens of surprise API calls on every page load.
+        match_covers = re.fullmatch(r'/api/rooms/([^/]+)/covers/restore', route)
+        if match_covers and method == 'POST':
+            self.body()
+            code = clean_code(match_covers.group(1))
+            with db() as conn:
+                check_room(conn, code)
+                check_member(conn, code, user['id'])
+                pending = conn.execute('''SELECT id,title,artist FROM songs WHERE room_code=?
+                    AND source_platform='lastfm' AND (artwork_url IS NULL OR artwork_url='')
+                    AND (artwork_checked_at IS NULL OR artwork_checked_at < ?)
+                    ORDER BY id DESC LIMIT 4''', (code, int(time.time())-86400)).fetchall()
+            count = 0
+            for song in pending:
+                cover = find_itunes_cover(song['title'], song['artist'])
+                with db() as conn:
+                    if cover:
+                        conn.execute('''UPDATE songs SET artwork_url=?, artwork_store_url=?,
+                            album_name=CASE WHEN (album_name IS NULL OR album_name='') THEN ? ELSE album_name END,
+                            artwork_checked_at=? WHERE id=? AND room_code=? AND (artwork_url IS NULL OR artwork_url='')''',
+                            (cover['url'], cover['storeUrl'], cover['album'], int(time.time()), song['id'], code))
+                        count += 1
+                    else:
+                        conn.execute('UPDATE songs SET artwork_checked_at=? WHERE id=? AND room_code=?',
+                                     (int(time.time()), song['id'], code))
+            return self.send_json({'updated':count, 'checked':len(pending)})
+
         match = re.fullmatch(r'/api/rooms/([^/]+)(?:/(join|songs)(?:/(\d+)(?:/(like))?)?)?', route)
         if match:
             code = clean_code(match.group(1))
@@ -706,6 +837,12 @@ class Handler(BaseHTTPRequestHandler):
                 selection = verify_selection(data.get('selectionToken'), user['id'])
                 title, artist = selection['title'][:120], selection['artist'][:120]
                 url = selection['musicUrl'][:500]
+                if selection['sourcePlatform'] == 'lastfm' and not selection.get('artworkUrl'):
+                    cover = find_itunes_cover(title, artist)
+                    if cover:
+                        selection['artworkUrl'] = cover['url']
+                        selection['artworkStoreUrl'] = cover['storeUrl']
+                        selection['album'] = cover['album']
                 note = optional_string(data, 'note', 500)
                 start, end = data.get('startSeconds'), data.get('endSeconds')
                 if start is not None and (type(start) is not int or not 0 <= start <= 36000):
@@ -718,12 +855,13 @@ class Handler(BaseHTTPRequestHandler):
                     check_room(conn, code)
                     check_member(conn, code, user['id'])
                     conn.execute('''INSERT INTO songs(room_code,user_id,nickname,title,artist,music_url,note,start_seconds,end_seconds,created_at,
-                      source_platform,source_id,source_catalog,artwork_url,album_name,duration_ms,isrc)
-                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                      source_platform,source_id,source_catalog,artwork_url,album_name,duration_ms,isrc,artwork_store_url)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (code, user['id'], user['nickname'], title, artist, url, note, start, end, now(),
                        selection['sourcePlatform'], selection['sourceId'], selection['sourceCatalog'],
                        selection.get('artworkUrl','')[:500], selection.get('album','')[:120],
-                       selection.get('durationMs'), selection.get('isrc','')[:32]))
+                       selection.get('durationMs'), selection.get('isrc','')[:32],
+                       selection.get('artworkStoreUrl','')[:500]))
                 return self.send_json({'ok': True}, 201)
             if song_id and subaction == 'like' and method == 'POST':
                 self.body()
