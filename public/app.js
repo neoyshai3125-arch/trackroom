@@ -409,9 +409,9 @@ function initBubbleCanvas() {
     const button = $('bubbleRestoreCovers');
     button.disabled = true;
     try {
-      const data = await api(`/api/rooms/${state.roomCode}/covers/restore`, {method:'POST',body:'{}'});
+      const data = await api(`/api/rooms/${state.roomCode}/covers/restore`, {method:'POST',body:JSON.stringify({retry:true})});
       await refreshRoom();
-      toast(data.updated ? `${data.updated}곡의 앨범 커버를 복구했어!` : '일치하는 앨범 커버를 찾지 못했어.');
+      toast(data.updated ? `${data.checked}곡을 재검색하여 ${data.updated}곡의 커버를 복구했어!` : `${data.checked}곡 재검색 완료. 일치하는 커버가 아직 없어.`);
     } catch(e) { toast(e.message,true); }
     finally { button.disabled = false; }
   });

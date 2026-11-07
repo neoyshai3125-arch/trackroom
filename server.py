@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import hmac
 import json
+from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor
 import os
 import re
@@ -286,28 +287,83 @@ ARTWORK_LOOKUP_LOCK = threading.Lock()
 
 def artwork_key(value):
     value = unicodedata.normalize('NFKC', str(value or '')).casefold()
-    # Ignore conventional 'feat' annotations, not substantive title subtitles.
     value = re.sub(r'\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring)\b[^\)\]]*[\)\]]', '', value)
     return re.sub(r'[^\w]+', '', value, flags=re.UNICODE)
 
 
-def same_artist(found, wanted):
-    a, b = artwork_key(found), artwork_key(wanted)
+def song_version(title):
+    """Distinguish actual live/acoustic/remix versions from studio songs.
+
+    Remastered years and 'official audio' labels are cosmetic metadata, but
+    remix/live/acoustic variants may have completely different artwork.
+    """
+    text = unicodedata.normalize('NFKC', str(title or '')).casefold()
+    kinds = {
+        'live': r'\b(?:live|concert|unplugged)\b|라이브|현장',
+        'remix': r'\b(?:remix|rework|sped up|slowed)\b|리믹스',
+        'acoustic': r'\b(?:acoustic|piano version)\b|어쿠스틱',
+        'instrumental': r'\b(?:instrumental|inst\.?)\b|연주곡',
+    }
+    return {name for name, rx in kinds.items() if re.search(rx, text, re.I)}
+
+
+def clean_title(title):
+    """Conservative editorial suffix cleanup; never rewrite the base title."""
+    text = unicodedata.normalize('NFKC', str(title or '')).casefold()
+    text = re.sub(r'\s*[\(\[][^)\]]*(?:remaster(?:ed)?|\d{4} version|official (?:audio|video)|lyric video|feat\.?|featuring)[^)\]]*[\)\]]', '', text, flags=re.I)
+    text = re.sub(r'\s*[-–]\s*(?:remaster(?:ed)?(?:\s*\d{4})?|official audio|audio only)\s*$', '', text, flags=re.I)
+    return artwork_key(text)
+
+
+def close_title(found, wanted):
+    a, b = clean_title(found), clean_title(wanted)
     if not a or not b:
-        return False
+        return 0.0
     if a == b:
+        return 1.0
+    # Avoid risky partial matches for short names like 'I', 'D', 'Blue'.
+    if min(len(a), len(b)) < 5:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def artist_forms(value):
+    """Name components only (never substring 'IU' within 'LUI')."""
+    raw = str(value or '').strip()
+    forms = {artwork_key(raw)}
+    # Parenthesized stage names: 아이유 (IU), BTS (방탄소년단)
+    forms.update(artwork_key(m) for m in re.findall(r'[\(\[]([^)]{2,45})[\)\]]', raw))
+    # Featured acts, joint collaborations; base credit remains preferred.
+    for name in re.split(r'\s+(?:feat\.?|ft\.?|featuring|with|and|x)\s+|\s*[,/&+]\s*', raw, flags=re.I):
+        forms.add(artwork_key(name))
+    return {f for f in forms if f}
+
+
+def same_artist(found, wanted):
+    if not found or not wanted:
+        return False
+    a, b = artist_forms(found), artist_forms(wanted)
+    if a & b:
         return True
-    # E.g. "IU & SUGA", "IU feat. SUGA"; no substring matches (IU != LUI).
-    names = re.split(r'\s+(?:feat\.?|ft\.?|featuring|and|x)\s+|\s*[,/&+]\s*', str(found), flags=re.I)
-    return b in {artwork_key(name) for name in names}
+    # Forgive small spelling differences for longer names, not short artists.
+    return any(min(len(x), len(y)) >= 7 and SequenceMatcher(None,x,y).ratio() >= 0.91
+               for x in a for y in b)
+
+
+# Conservative official stage-name variants to support Korean/English search
+# without pretending that arbitrary titles can be machine-translated reliably.
+ARTIST_ALIASES = {
+    '아이유': ('IU',), '방탄소년단': ('BTS',), '블랙핑크': ('BLACKPINK',),
+    '태연': ('TAEYEON',), '지코': ('ZICO',), '트와이스': ('TWICE',),
+    '세븐틴': ('SEVENTEEN',), '뉴진스': ('NewJeans',),
+    '데이식스': ('DAY6',), '르세라핌': ('LE SSERAFIM',),
+    '에스파': ('aespa',), '엔하이픈': ('ENHYPEN',),
+    '스트레이 키즈': ('Stray Kids',), '엑소': ('EXO',),
+}
 
 
 def lastfm_aliases(track):
-    """Exact source URL slugs can preserve the original English title/artist.
-
-    For example the Last.fm display title can be Korean but its canonical URL
-    may contain 'Through the Night'.  Only use the already-returned Last.fm URL.
-    """
+    """Canonical Last.fm URL slugs often retain English/romanized names."""
     titles = [str(track.get('title') or '').strip()]
     artists = [str(track.get('artist') or '').strip()]
     url = str(track.get('musicUrl') or '')
@@ -323,88 +379,161 @@ def lastfm_aliases(track):
                 artists.append(slug_artist)
     except (ValueError, TypeError):
         pass
-    # Common Korean/romanized artist names are catalog display variants.
-    artist_aliases = {
-        '아이유': 'IU', '방탄소년단': 'BTS', '블랙핑크': 'BLACKPINK',
-        '태연': 'TAEYEON', '지코': 'ZICO', '트와이스': 'TWICE',
-        '세븐틴': 'SEVENTEEN', '뉴진스': 'NewJeans',
-        '데이식스': 'DAY6', '르세라핌': 'LE SSERAFIM',
-    }
-    for alias, english in artist_aliases.items():
-        if any(artwork_key(name) in (artwork_key(alias), artwork_key(english)) for name in artists):
-            artists.extend((alias, english))
-    return list(dict.fromkeys(titles)), list(dict.fromkeys(artists))
+    for alias, english in ARTIST_ALIASES.items():
+        if any(artwork_key(name) in (artwork_key(alias), *(artwork_key(x) for x in english)) for name in artists):
+            artists.extend((alias, *english))
+    return list(dict.fromkeys(t for t in titles if t)), list(dict.fromkeys(a for a in artists if a))
 
 
-def itunes_matches(tracks, query, max_calls=2, limit=150, allow_fallback=True):
-    """Verify an Apple cover by *both* canonical title and artist.
+MB_ALIAS_CACHE = {}
+MB_ALIAS_LOCK = threading.Lock()
+MB_REQUEST_LOCK = threading.Lock()
+MB_LAST_REQUEST = [0.0]
 
-    Search the broad query first, then retry a few *specific* missing songs.
-    This prevents an artist-only search ('아이유') from returning artless songs
-    merely because those songs were outside the first store results page.
+
+def musicbrainz_variants(title, artist):
+    """Find catalog-recorded multilingual variants, not guessed translations.
+
+    MusicBrainz indexes official recording aliases, including some translated
+    names. Requests are optional and conservatively rate-limited to 1/second.
     """
-    matches = {}
-    aliases = [lastfm_aliases(track) for track in tracks]
-    for country in ('US', 'JP')[:max_calls]:
-        if len(matches) >= len(tracks):
-            break
-        url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
-            'term': query, 'country': country, 'media': 'music', 'entity': 'song',
-            'limit': limit
-        })
-        try:
-            data = request_json(url, headers={'User-Agent': 'TRACKROOM/0.5'}, timeout=6)
-        except (APIError, ValueError, TypeError) as exc:
-            print(f'[TRACKROOM artwork] iTunes {country} lookup failed: {exc}', flush=True)
-            continue
-        results = data.get('results', []) if isinstance(data, dict) else []
-        index = {}
-        for item in results:
-            if not isinstance(item, dict) or item.get('kind') != 'song':
+    cache_key = (artwork_key(title), artwork_key(artist))
+    if not all(cache_key):
+        return [], []
+    current = time.time()
+    with MB_ALIAS_LOCK:
+        existing = MB_ALIAS_CACHE.get(cache_key)
+        if existing and existing[0] > current:
+            return existing[1]
+    term = f'recording:"{str(title)[:100].replace(chr(34), "")}" AND artist:"{str(artist)[:100].replace(chr(34), "")}"'
+    url = 'https://musicbrainz.org/ws/2/recording/?' + urllib.parse.urlencode({
+        'query':term, 'fmt':'json', 'limit':5
+    })
+    titles, artists = [], []
+    try:
+        with MB_REQUEST_LOCK:
+            elapsed = time.monotonic() - MB_LAST_REQUEST[0]
+            if elapsed < 1.1: time.sleep(1.1 - elapsed)
+            MB_LAST_REQUEST[0] = time.monotonic()
+            data = request_json(url, headers={'User-Agent':'TRACKROOM/0.5 (https://trackroom.onrender.com)'}, timeout=5)
+        for record in data.get('recordings', [])[:5]:
+            if not isinstance(record, dict) or int(record.get('score') or 0) < 90:
                 continue
-            title = artwork_key(item.get('trackName'))
-            artist = item.get('artistName', '')
-            art = safe_artwork(item.get('artworkUrl100', ''))
-            link = item.get('trackViewUrl', '')
-            if not title or not art or not isinstance(link, str):
+            variants = [record.get('title','')]
+            variants += [alias.get('name','') for alias in record.get('aliases', []) if isinstance(alias, dict)]
+            possible_artists=[]
+            for credit in record.get('artist-credit', []):
+                if isinstance(credit, dict):
+                    possible_artists.extend([credit.get('name',''), (credit.get('artist') or {}).get('name','')])
+            # Query contains BOTH title and artist; use highly ranked records only.
+            titles.extend(v for v in variants if v and len(v) <= 120)
+            artists.extend(v for v in possible_artists if v and len(v) <= 120)
+    except (APIError, ValueError, TypeError, AttributeError, TimeoutError) as exc:
+        print(f'[TRACKROOM artwork] MusicBrainz multilingual alias lookup failed: {exc}', flush=True)
+    value = (list(dict.fromkeys(titles)), list(dict.fromkeys(artists)))
+    with MB_ALIAS_LOCK:
+        if len(MB_ALIAS_CACHE) > 1000: MB_ALIAS_CACHE.clear()
+        MB_ALIAS_CACHE[cache_key] = (time.time()+12*3600, value)
+    return value
+
+
+def apple_results(term, country='US', limit=100):
+    url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
+        'term':term, 'country':country, 'media':'music', 'entity':'song',
+        'limit':limit,
+    })
+    try:
+        data = request_json(url, headers={'User-Agent':'TRACKROOM/0.5'}, timeout=4)
+        return data.get('results',[]) if isinstance(data,dict) else []
+    except (APIError, ValueError, TypeError) as exc:
+        print(f'[TRACKROOM artwork] Apple {country} artwork query failed: {exc}', flush=True)
+        return []
+
+
+def best_artwork_candidate(tracks, items, aliases, accepted):
+    """Prefer high-confidence title+artist matches; reject wrong versions."""
+    for i, track in enumerate(tracks):
+        titles, artists = aliases[i]
+        best = None
+        best_score = -1.0
+        for item in items:
+            if not isinstance(item,dict) or item.get('kind') != 'song':
+                continue
+            artist_name = item.get('artistName','')
+            if not any(same_artist(artist_name, a) for a in artists):
+                continue
+            title_name = item.get('trackName','')
+            # No live/remix cover for an unrelated studio recording.
+            if not any(song_version(t) == song_version(title_name) for t in titles):
+                continue
+            score = max((close_title(title_name, t) for t in titles), default=0)
+            if score < (0.83 if len(clean_title(title_name)) >= 7 else 0.95):
+                continue
+            art = safe_artwork(item.get('artworkUrl100',''))
+            link = item.get('trackViewUrl','')
+            if not art or not isinstance(link,str):
                 continue
             try:
                 u = urlparse(link)
-            except (TypeError, ValueError):
+            except (ValueError,TypeError):
                 continue
-            if u.scheme != 'https' or u.hostname not in ('music.apple.com', 'itunes.apple.com'):
+            if u.scheme != 'https' or u.hostname not in ('itunes.apple.com','music.apple.com'):
                 continue
-            index.setdefault(title, []).append((artist, art, link, item.get('collectionName') or ''))
-        for i, track in enumerate(tracks):
-            if i in matches:
-                continue
-            titles, artists = aliases[i]
-            for name in titles:
-                for artist, art, link, album in index.get(artwork_key(name), []):
-                    if any(same_artist(artist, wanted) for wanted in artists):
-                        high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
-                        matches[i] = {'url': safe_artwork(high_res) or art,
-                                      'storeUrl': link, 'album': str(album)[:120]}
-                        break
-                if i in matches:
-                    break
-    if allow_fallback and len(matches) < len(tracks):
-        # At most four extra Apple searches per user query; avoid hammering the
-        # public API and keep the UI responsive via parallel independent lookups.
-        missing = [i for i in range(len(tracks)) if i not in matches][:4]
+            if score > best_score:
+                high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
+                best = {'url':safe_artwork(high_res) or art, 'storeUrl':link,
+                        'album':str(item.get('collectionName') or '')[:120]}
+                best_score = score
+        if best and (i not in accepted or best_score > accepted[i][0]):
+            accepted[i] = (best_score,best)
+
+
+def itunes_matches(tracks, query, max_calls=2, limit=150, allow_fallback=True, expand_multilingual=False):
+    """Apple cover verification, varied queries and guarded fuzzy matching.
+
+    Query expansion: Last.fm canonical URL, bilingual stage names, optionally
+    MusicBrainz recording aliases. No blind English machine translation.
+    """
+    if not tracks: return {}
+    aliases = [lastfm_aliases(t) for t in tracks]
+    accepted = {}
+    # First pass: broad query for the list (US/JP). No per-song external calls.
+    for country in ('US','JP')[:max_calls]:
+        best_artwork_candidate(tracks, apple_results(query,country,limit), aliases, accepted)
+        if len(accepted) == len(tracks): break
+
+    if allow_fallback and len(accepted) < len(tracks):
+        # For the first few misses, search individually using translated/aliased
+        # metadata and both common Asian/Western store catalogs.
+        missing = [i for i in range(len(tracks)) if i not in accepted][:4]
         def lookup_single(i):
             titles, artists = aliases[i]
-            # Prefer the Last.fm canonical URL slug, which can be in English
-            # even if its displayed title is Korean.
-            name, artist = titles[-1], artists[-1]
-            return i, itunes_matches([tracks[i]], f'{name} {artist}',
-                                     max_calls=1, limit=60, allow_fallback=False).get(0)
-        if missing:
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                for i, cover in executor.map(lookup_single, missing):
-                    if cover:
-                        matches[i] = cover
-    return matches
+            variants = [(titles[-1], artists[-1])]
+            if expand_multilingual:
+                variants.append((titles[0],artists[0]))
+            one={}
+            for title, artist in list(dict.fromkeys(variants))[:2]:
+                for country in ('US','JP'):
+                    rows = apple_results(f'{title} {artist}', country, 80)
+                    best_artwork_candidate([tracks[i]], rows, [(titles,artists)], one)
+                    if one: return i, one[0]
+            # MusicBrainz provides human-maintained alternate names, not
+            # unverified machine translation; consult for selected items only.
+            if expand_multilingual and i in missing[:2]:
+                extra_titles, extra_artists = musicbrainz_variants(titles[0], artists[0])
+                titles.extend(extra_titles)
+                artists.extend(extra_artists)
+                for title in extra_titles[:2]:
+                    for country in ('US','JP'):
+                        rows = apple_results(f'{title} {artists[-1]}',country,60)
+                        best_artwork_candidate([tracks[i]], rows, [(titles,artists)], one)
+                        if one: return i, one[0]
+            return i, None
+        # Parallelize independent store lookups, but avoid large bursts.
+        with ThreadPoolExecutor(max_workers=min(3,len(missing) or 1)) as executor:
+            for idx, found in executor.map(lookup_single, missing):
+                if found: accepted[idx]=found
+    return {i: cover for i,(score,cover) in accepted.items()}
 
 
 def enrich_lastfm_results(results, query):
@@ -416,20 +545,21 @@ def enrich_lastfm_results(results, query):
     return results
 
 
-def find_itunes_cover(title, artist):
-    """One selected/previously saved track; cache both matches and misses 6h."""
+def find_itunes_cover(title, artist, force=False):
+    """One selected/previously saved track, with optional manual retry."""
     key = (artwork_key(title), artwork_key(artist))
-    if not all(key): return {}
-    current = time.time()
+    if not all(key):return {}
+    if not force:
+        with ARTWORK_LOOKUP_LOCK:
+            old = ARTWORK_LOOKUP_CACHE.get(key)
+            if old and old[0] > time.time():
+                return old[1]
+    item={'title':title,'artist':artist}
+    match = itunes_matches([item],f'{title} {artist}',limit=100,expand_multilingual=True).get(0,{})
     with ARTWORK_LOOKUP_LOCK:
-        old = ARTWORK_LOOKUP_CACHE.get(key)
-        if old and old[0] > current:
-            return old[1]
-    item = {'title': title, 'artist': artist}
-    match = itunes_matches([item], f'{title} {artist}', limit=75).get(0, {})
-    with ARTWORK_LOOKUP_LOCK:
-        if len(ARTWORK_LOOKUP_CACHE) > 1000: ARTWORK_LOOKUP_CACHE.clear()
-        ARTWORK_LOOKUP_CACHE[key] = (time.time() + 6*3600, match)
+        if len(ARTWORK_LOOKUP_CACHE)>1000:ARTWORK_LOOKUP_CACHE.clear()
+        # Shorter miss cache than successful match, so a new catalog result can appear.
+        ARTWORK_LOOKUP_CACHE[key]=(time.time()+(6*3600 if match else 30*60),match)
     return match
 
 def request_json(url, headers=None, data=None, method=None, timeout=8):
@@ -852,18 +982,20 @@ class Handler(BaseHTTPRequestHandler):
         # Explicit action to avoid dozens of surprise API calls on every page load.
         match_covers = re.fullmatch(r'/api/rooms/([^/]+)/covers/restore', route)
         if match_covers and method == 'POST':
-            self.body()
+            restore_request = self.body()
+            force = restore_request.get('retry') is True
             code = clean_code(match_covers.group(1))
             with db() as conn:
                 check_room(conn, code)
                 check_member(conn, code, user['id'])
                 pending = conn.execute('''SELECT id,title,artist FROM songs WHERE room_code=?
                     AND source_platform='lastfm' AND (artwork_url IS NULL OR artwork_url='')
-                    AND (artwork_checked_at IS NULL OR artwork_checked_at < ?)
-                    ORDER BY id DESC LIMIT 4''', (code, int(time.time())-86400)).fetchall()
+                    AND (artwork_checked_at IS NULL OR artwork_checked_at < ? OR ?=1)
+                    ORDER BY COALESCE(artwork_checked_at,0) ASC, id DESC LIMIT 4''',
+                    (code, int(time.time())-86400, int(force))).fetchall()
             count = 0
             for song in pending:
-                cover = find_itunes_cover(song['title'], song['artist'])
+                cover = find_itunes_cover(song['title'], song['artist'], force=True) if force else find_itunes_cover(song['title'], song['artist'])
                 with db() as conn:
                     if cover:
                         conn.execute('''UPDATE songs SET artwork_url=?, artwork_store_url=?,
