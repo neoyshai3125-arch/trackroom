@@ -180,3 +180,12 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 .catalog-discography-card em{position:absolute;top:12px;left:12px;padding:3px 6px;font-style:normal;font-size:9px;background:#1d2b21e0;color:#e2f4c1;border-radius:5px;}
 .catalog-artist-track-heading{margin:16px 0 9px;padding-top:12px;border-top:1px solid #536a50;}
 @media(max-width:400px){.catalog-discography-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.catalog-artist-header-avatar{width:68px;height:68px}}
+
+/* v6.1.1 artist profile result: keep cards at readable height in the scrolling flex list. */
+.catalog-results > .catalog-artist-result {
+  flex: 0 0 auto;
+  min-height: 82px;
+}
+@media (max-width: 440px) {
+  .catalog-results > .catalog-artist-result { min-height: 72px; }
+}
