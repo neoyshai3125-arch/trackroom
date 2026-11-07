@@ -75,6 +75,7 @@
         <div class="room-menu-actions">
           <button type="button" id="shareBtn" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⧉</span><span><strong>초대 링크 복사</strong><small>친구를 이 방으로 초대하기</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuProfile" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">♙</span><span><strong>프로필 설정</strong><small>닉네임·음원 플랫폼 변경</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" id="roomMenuRestoreCovers" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">▧</span><span><strong>앨범 커버 다시 찾기</strong><small>커버 없는 음악 재검색</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
         <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼.</p>
@@ -146,9 +147,17 @@
           <div class="panel-foot">NO AUDIO UPLOADS. JUST GOOD TASTE. ☺</div>
         </aside>
       </div>
-      <button class="room-add-fab" type="button" id="openAddPanel" aria-controls="addPanel" aria-expanded="false" aria-label="음악 추가">
-        <span class="room-add-fab-icon" aria-hidden="true">+</span><span>음악 추가</span>
-      </button>
+      <div class="mobile-action-dock" role="group" aria-label="음악 공간 빠른 조작">
+        <button type="button" class="mobile-dock-button mobile-dock-shuffle" id="mobileShuffle" title="셔플: 다른 추천곡 발견" aria-label="셔플: 다른 추천곡 발견">
+          <svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h2.6c2.2 0 3.5-.8 4.8-2.7l5.2-7.6C15.9 5.8 17.3 5 19.5 5H22"/><path d="M2 6h2.5c2.1 0 3.4.7 4.7 2.6"/><path d="M14.8 15.4c1.2 1.8 2.6 2.6 4.7 2.6H22"/></svg>
+        </button>
+        <button class="room-add-fab" type="button" id="openAddPanel" aria-controls="addPanel" aria-expanded="false" title="음악 추가" aria-label="음악 추가">
+          <span class="room-add-fab-icon" aria-hidden="true">+</span><span class="room-add-fab-text">음악 추가</span>
+        </button>
+        <button type="button" class="mobile-dock-button mobile-dock-focus" id="mobileFocus" title="초점 설정: 화면 중앙으로 복귀" aria-label="초점 설정: 화면 중앙으로 복귀">
+          <svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
     </main>
     <footer id="landingFooter" class="landing-footer">TRACKROOM <span>©</span> GOOD TASTE IS CONTAGIOUS.</footer>
   </div>

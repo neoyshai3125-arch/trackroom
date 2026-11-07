@@ -317,3 +317,62 @@ body.room-active .bubble-detail {
 /* Keep the compact room header horizontal on phones. Legacy landing styles
    previously switched .room-hero into a column at narrow viewports. */
 body.room-active .room-hero { flex-direction:row; align-items:center; }
+
+/* TRACKROOM v6.3 — phone-only compact quick actions, desktop unchanged. */
+.mobile-action-dock { display:contents; }
+.mobile-dock-button { display:none; }
+@media (max-width:720px) {
+  /* The canvas stays pan/zoom capable via touch gestures, without the old clutter. */
+  body.room-active .canvas-tip,
+  body.room-active .canvas-controls { display:none !important; }
+  body.room-active .mobile-action-dock {
+    position:fixed; display:flex; align-items:center; justify-content:flex-end;
+    gap:9px; right:calc(13px + env(safe-area-inset-right,0px));
+    bottom:calc(17px + env(safe-area-inset-bottom,0px));
+    z-index:35; padding:6px; border:1px solid #70886666;
+    border-radius:20px; background:#101b17ee;
+    box-shadow:0 14px 40px #000b,0 0 0 1px #0a140b55;
+    backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px);
+  }
+  body.room-active .mobile-dock-button,
+  body.room-active .mobile-action-dock .room-add-fab {
+    position:static; inset:auto; display:grid; place-items:center;
+    flex:none; width:48px; height:48px; min-height:48px; min-width:48px;
+    margin:0; padding:0; border-radius:15px;
+    color:#e5f4d9; border:1px solid #4c684f;
+    background:#28392e; box-shadow:none;
+    transform:none; transition:background .13s,border-color .13s;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  }
+  body.room-active .mobile-dock-button:active,
+  body.room-active .mobile-dock-button:focus-visible {
+    background:#415942; border-color:#a9d879; outline:2px solid #c9f48266; outline-offset:1px;
+  }
+  body.room-active .mobile-action-dock .room-add-fab {
+    background:var(--lime); color:#17291b; border-color:#d7fa9b;
+  }
+  body.room-active .mobile-action-dock .room-add-fab:hover,
+  body.room-active .mobile-action-dock .room-add-fab:focus-visible {
+    background:#deff98; box-shadow:none; transform:none; outline:2px solid #c9f48266;
+  }
+  body.room-active .mobile-action-dock .room-add-fab-icon {
+    width:100%; height:100%; border-radius:inherit; background:transparent;
+    color:#17291b; font-size:32px; font-weight:400;
+  }
+  body.room-active .mobile-action-dock .room-add-fab-text { display:none; }
+  /* Keep the details above the dock rather than behind touch targets. */
+  body.room-active .bubble-detail {
+    bottom:calc(100px + env(safe-area-inset-bottom,0px));
+    max-height:calc(100dvh - 205px - env(safe-area-inset-bottom,0px));
+  }
+}
+@media (max-width:380px) {
+  body.room-active .mobile-action-dock { gap:6px; right:10px; padding:5px; }
+  body.room-active .mobile-dock-button,
+  body.room-active .mobile-action-dock .room-add-fab {
+    width:46px; height:46px; min-width:46px; min-height:46px;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .mobile-dock-button { transition:none !important; }
+}

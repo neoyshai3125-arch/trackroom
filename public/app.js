@@ -465,14 +465,18 @@ function initBubbleCanvas() {
   });
   $('bubbleZoomIn').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom*1.2));
   $('bubbleZoomOut').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom/1.2));
-  $('bubbleReset').addEventListener('click',()=>{bubbleCanvasCamera={x:0,y:0,zoom:1};applyBubbleCamera();closeBubbleDetail();});
-  $('bubbleDiscover').addEventListener('click',()=>{
+  const resetView = () => { bubbleCanvasCamera={x:0,y:0,zoom:1}; applyBubbleCamera(); closeBubbleDetail(); };
+  const shuffleView = () => {
     if (state.songs.length < 2) return toast('새로운 영역을 탐색하려면 노래를 두 곡 이상 등록해 줘.');
     bubbleRandomIndex = (bubbleRandomIndex + 1 + Math.floor(Math.random()*Math.max(1,state.songs.length-1))) % state.songs.length;
     bubbleCanvasCamera.zoom = 1;
     panToSongIndex(bubbleRandomIndex);
     closeBubbleDetail();
-  });
+  };
+  $('bubbleReset').addEventListener('click',resetView);
+  $('mobileFocus').addEventListener('click',resetView);
+  $('bubbleDiscover').addEventListener('click',shuffleView);
+  $('mobileShuffle').addEventListener('click',shuffleView);
   $('bubbleDetailClose').addEventListener('click',closeBubbleDetail);
   $('bubbleDetail').addEventListener('click',onSongAction);
   $('openAddPanel').addEventListener('click',openAddPanel);
@@ -969,6 +973,7 @@ async function init() {
   $('roomMenuClose').addEventListener('click', () => closeRoomMenu());
   $('roomMenuBackdrop').addEventListener('click', () => closeRoomMenu());
   $('shareBtn').addEventListener('click', () => { closeRoomMenu(false); copyShare(); });
+  $('roomMenuRestoreCovers').addEventListener('click', () => { closeRoomMenu(false); $('bubbleRestoreCovers').click(); });
   $('roomMenuProfile').addEventListener('click', () => { closeRoomMenu(false); showProfile(); });
   $('roomMenuHome').addEventListener('click', showLanding);
   renderAccount();
