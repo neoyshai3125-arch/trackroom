@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import hmac
 import json
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 import unicodedata
@@ -301,13 +302,49 @@ def same_artist(found, wanted):
     return b in {artwork_key(name) for name in names}
 
 
-def itunes_matches(tracks, query, max_calls=2, limit=150):
-    """At most two storefront searches for one user search. No art if uncertain.
+def lastfm_aliases(track):
+    """Exact source URL slugs can preserve the original English title/artist.
 
-    Return mapping of result indices to {url, storeUrl, album}. Apple content is
-    promotional and must have an Apple Store link near displayed artwork.
+    For example the Last.fm display title can be Korean but its canonical URL
+    may contain 'Through the Night'.  Only use the already-returned Last.fm URL.
+    """
+    titles = [str(track.get('title') or '').strip()]
+    artists = [str(track.get('artist') or '').strip()]
+    url = str(track.get('musicUrl') or '')
+    try:
+        parsed = urlparse(url)
+        if parsed.hostname in ('last.fm', 'www.last.fm') and '/_/' in parsed.path:
+            prefix, song = parsed.path.split('/_/', 1)
+            slug_title = urllib.parse.unquote_plus(song.split('/', 1)[0]).strip()
+            slug_artist = urllib.parse.unquote_plus(prefix.split('/music/', 1)[-1].strip('/')).strip()
+            if 2 <= len(slug_title) <= 120:
+                titles.append(slug_title)
+            if 2 <= len(slug_artist) <= 120:
+                artists.append(slug_artist)
+    except (ValueError, TypeError):
+        pass
+    # Common Korean/romanized artist names are catalog display variants.
+    artist_aliases = {
+        '아이유': 'IU', '방탄소년단': 'BTS', '블랙핑크': 'BLACKPINK',
+        '태연': 'TAEYEON', '지코': 'ZICO', '트와이스': 'TWICE',
+        '세븐틴': 'SEVENTEEN', '뉴진스': 'NewJeans',
+        '데이식스': 'DAY6', '르세라핌': 'LE SSERAFIM',
+    }
+    for alias, english in artist_aliases.items():
+        if any(artwork_key(name) in (artwork_key(alias), artwork_key(english)) for name in artists):
+            artists.extend((alias, english))
+    return list(dict.fromkeys(titles)), list(dict.fromkeys(artists))
+
+
+def itunes_matches(tracks, query, max_calls=2, limit=150, allow_fallback=True):
+    """Verify an Apple cover by *both* canonical title and artist.
+
+    Search the broad query first, then retry a few *specific* missing songs.
+    This prevents an artist-only search ('아이유') from returning artless songs
+    merely because those songs were outside the first store results page.
     """
     matches = {}
+    aliases = [lastfm_aliases(track) for track in tracks]
     for country in ('US', 'JP')[:max_calls]:
         if len(matches) >= len(tracks):
             break
@@ -316,9 +353,10 @@ def itunes_matches(tracks, query, max_calls=2, limit=150):
             'limit': limit
         })
         try:
-            data = request_json(url, headers={'User-Agent': 'TRACKROOM/0.5'}, timeout=3)
-        except (APIError, ValueError, TypeError):
-            continue  # Artwork is optional; it must never break Last.fm search.
+            data = request_json(url, headers={'User-Agent': 'TRACKROOM/0.5'}, timeout=6)
+        except (APIError, ValueError, TypeError) as exc:
+            print(f'[TRACKROOM artwork] iTunes {country} lookup failed: {exc}', flush=True)
+            continue
         results = data.get('results', []) if isinstance(data, dict) else []
         index = {}
         for item in results:
@@ -334,18 +372,38 @@ def itunes_matches(tracks, query, max_calls=2, limit=150):
                 u = urlparse(link)
             except (TypeError, ValueError):
                 continue
-            if u.scheme != 'https' or u.hostname not in ('music.apple.com','itunes.apple.com'):
+            if u.scheme != 'https' or u.hostname not in ('music.apple.com', 'itunes.apple.com'):
                 continue
             index.setdefault(title, []).append((artist, art, link, item.get('collectionName') or ''))
         for i, track in enumerate(tracks):
-            if i in matches: continue
-            for artist, art, link, album in index.get(artwork_key(track.get('title')), []):
-                if same_artist(artist, track.get('artist')):
-                    # 100x100 can be expanded by the Apple CDN without saving/copying.
-                    high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
-                    matches[i] = {'url': safe_artwork(high_res) or art, 'storeUrl': link,
-                                  'album': str(album)[:120]}
+            if i in matches:
+                continue
+            titles, artists = aliases[i]
+            for name in titles:
+                for artist, art, link, album in index.get(artwork_key(name), []):
+                    if any(same_artist(artist, wanted) for wanted in artists):
+                        high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
+                        matches[i] = {'url': safe_artwork(high_res) or art,
+                                      'storeUrl': link, 'album': str(album)[:120]}
+                        break
+                if i in matches:
                     break
+    if allow_fallback and len(matches) < len(tracks):
+        # At most four extra Apple searches per user query; avoid hammering the
+        # public API and keep the UI responsive via parallel independent lookups.
+        missing = [i for i in range(len(tracks)) if i not in matches][:4]
+        def lookup_single(i):
+            titles, artists = aliases[i]
+            # Prefer the Last.fm canonical URL slug, which can be in English
+            # even if its displayed title is Korean.
+            name, artist = titles[-1], artists[-1]
+            return i, itunes_matches([tracks[i]], f'{name} {artist}',
+                                     max_calls=1, limit=60, allow_fallback=False).get(0)
+        if missing:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                for i, cover in executor.map(lookup_single, missing):
+                    if cover:
+                        matches[i] = cover
     return matches
 
 
