@@ -376,3 +376,14 @@ body.room-active .room-hero { flex-direction:row; align-items:center; }
 @media (prefers-reduced-motion:reduce) {
   .mobile-dock-button { transition:none !important; }
 }
+
+/* v6.3.1: small nonintrusive UI version label, visible in hamburger menu. */
+.client-build-label { display:inline-block; color:#bbd99c; padding:2px 6px; font-size:10px; font-weight:800; letter-spacing:.35px; background:#24382b; border:1px solid #4b6f50; border-radius:6px; margin-left:5px; }
+
+/* TRACKROOM v6.5 — PWA install entry points and guidance */
+.pwa-install-home{width:100%;margin:0 0 9px;justify-content:center;border-color:#6a8050;color:#d8f5b2;background:#27342a;line-height:1.4}
+.pwa-install-home:hover,.pwa-install-home:focus-visible{background:#384d35;border-color:#c5ec88;outline:0}
+.pwa-install-panel .pwa-help-text{font-size:14px;line-height:1.9;color:#e1e8d9;margin:18px 0}
+.pwa-install-panel .pwa-help-note{font-size:11px;line-height:1.8;color:#9cab9c}
+.pwa-install-panel .btn{margin-top:22px}
+@media (display-mode: standalone){html{overscroll-behavior:none}body{overscroll-behavior-y:none}}

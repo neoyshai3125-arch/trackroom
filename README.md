@@ -1,23 +1,48 @@
-# TRACKROOM v6.4 — 50곡 한눈에 보기
+# TRACKROOM v6.5 — PWA 홈 화면 설치
 
-## 변경 내용
-- 기존 최소 축소 수준(52%)을 방 진입·초점 복귀·셔플의 기본 배율로 변경
-- 모바일 핀치 / PC 마우스 휠로 추가 축소 가능
-- 화면 크기에 맞춰 약 50곡의 버블이 한눈에 들어오는 수준을 최대 축소 한계로 설정
-- 화면 방향 변경 시 축소 범위 자동 조절
-- 기존 3개 모바일 버튼, 노래·앨범·아티스트 검색, 전체 화면 UI 유지
-- 서버 및 DB 변경 없음. 기존 Neon 회원/방/추천곡 영향 없음
+기준: TRACKROOM v6.4 (최소 배율 52%, 약 50곡 한눈에 보기).
 
-## 설치
-업데이트 ZIP의 두 파일을 동일한 GitHub 경로에 교체:
+## 추가 기능
+- Android Chrome/삼성 인터넷에서 홈 화면에 TRACKROOM 설치
+- iPhone/iPad에서 공유 → 홈 화면에 추가 후 앱 형태로 실행
+- 앱 아이콘(192/512 PNG, adaptive/maskable 512, iPhone 180)
+- 주소 표시줄 없이 앱 형태로 표시(기기 및 브라우저 지원에 따라 다름)
+- 시작 화면 + 기존 방/회원/추천곡 유지, 새로 가입할 필요 없음
+- 메인 화면의 `홈 화면에 TRACKROOM 설치` 버튼과 추천방 왼쪽 메뉴의 `TRACKROOM 앱 설치`
+- `beforeinstallprompt` 지원 브라우저는 설치창, 미지원 브라우저는 직접 설치 안내
+- 기본 정적 화면 파일만 캐시하는 서비스 워커. 인터넷 끊김 안내 페이지.
+
+중요: **오프라인에서 음악/로그인/추천곡 조회는 불가능**. 이 데이터는 기존 서버에서 조회함. 서버와 Neon 데이터베이스는 변경하거나 이전하지 않음.
+
+## 업데이트 ZIP 설치법 (GitHub 저장소 루트 기준)
+기존 파일 4개 교체:
+- `server.py`
+- `public/index.html`
 - `public/app.js`
-- `public/index.html` (새로운 JS를 확실히 불러오도록 버전 번호 변경)
+- `public/style.css`
 
-커밋 후 Render가 Live 상태가 되면 기존 방에서 새로고침.
-방 URL은 그대로 사용할 수 있습니다.
+새 파일과 디렉터리 추가:
+- `public/manifest.webmanifest`
+- `public/sw.js`
+- `public/offline.html`
+- `public/icons/icon-192.png`
+- `public/icons/icon-512.png`
+- `public/icons/icon-maskable-512.png`
+- `public/icons/apple-touch-icon.png`
 
-## 배율
-- 기본 배율 52% (기존 버전 최소 축소)
-- 최소 배율: 화면 크기에 맞춰 자동 계산, 50개의 첫 버블 위치를 기준으로 맞춤
-- 최대 확대: 215%
-- 화면에 보이는 정확한 곡 수는 화면 비율과 버블의 위치에 따라 달라질 수 있음
+다른 파일은 변경하지 않음. `requirements.txt`, `DATABASE_URL` 및 기존 Neon 데이터 유지.
+
+GitHub에서 올바른 경로로 업로드/커밋 → Render 자동 배포 Live → 브라우저 새로고침.
+실수로 ZIP의 `public` 디렉터리를 기존 `public` 디렉터리 **안**에 중첩해서 올리지 마세요.
+
+## 설치하기
+- Android: TRACKROOM 사이트 접속 → `홈 화면에 TRACKROOM 설치` → 설치 승인. 설치창이 나오지 않으면 Chrome 메뉴(⋮) → `앱 설치` / `홈 화면에 추가`.
+- iPhone: Safari 등 지원 브라우저에서 TRACKROOM 사이트 접속 → 공유 → `홈 화면에 추가` → `웹 앱으로 열기`(선택 항목이 있을 경우) → 추가.
+
+## 확인
+- `/manifest.webmanifest` 접속시 앱 설정 JSON
+- `/sw.js` 접속시 PWA 서비스 워커 JS
+- `/icons/icon-192.png` 접속시 앱 아이콘
+- `/health`에서 storage가 postgresql인지 확인 (기존 설정 유지)
+
+앱을 설치해도 기존 웹사이트와 동일한 Render 서버·Neon DB를 사용합니다. 다만 iPhone에서는 홈 화면 앱의 쿠키가 브라우저와 다를 수 있어 **최초 1회 다시 로그인**해야 할 수 있습니다. 새 계정을 만들 필요는 없습니다.
