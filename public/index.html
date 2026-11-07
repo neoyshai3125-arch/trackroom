@@ -64,14 +64,8 @@
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
           <div class="section-heading canvas-heading">
-            <div><div class="mini-heading">THE DISCOVERY FIELD</div><h2>우리의 음악 공간 <span id="songTotal">0</span></h2><p class="canvas-caption">마음에 드는 버블을 찾아봐. 정렬 기준은 중앙에 보이는 곡의 우선순위만 바꿔.</p></div>
+            <div><div class="mini-heading">THE DISCOVERY FIELD</div><h2>우리의 음악 공간 <span id="songTotal">0</span></h2><p class="canvas-caption">버블을 자유롭게 이동하며 음악을 발견해 봐.</p></div>
             <div class="canvas-toolbar">
-              <label class="canvas-sort-wrap" for="canvasSort">버블 배치 기준
-                <select id="canvasSort" class="canvas-sort-select" aria-label="음악 버블 정렬 기준">
-                  <option value="recent">최신순</option>
-                  <option value="popular">인기순 · 좋아요</option>
-                </select>
-              </label>
               <button class="btn btn-primary add-track-open" type="button" id="openAddPanel">+ 음악 추가</button>
             </div>
           </div>
@@ -101,7 +95,7 @@
           <div class="panel-decor" aria-hidden="true">✳</div>
           <div class="mini-heading">DROP A TRACK</div>
           <h2>이 노래,<br/>너도 들어봐.</h2>
-          <p class="panel-intro">Last.fm 또는 Apple/iTunes에서 검색된 음악만 등록할 수 있어. 곡 정보에 저장된 앨범 커버를 버블에 표시해.</p>
+          <p class="panel-intro">Apple/iTunes 또는 Last.fm에서 검색된 음악만 등록할 수 있어. 곡 정보에 저장된 앨범 커버를 버블에 표시해.</p>
           <form id="catalogSearchForm" class="catalog-search-form" role="search">
             <div class="catalog-provider"><span class="catalog-provider-name">✳ 음악 검색 · 기본 Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
             <label class="field-label" for="catalogPlatform">검색 데이터베이스</label>
@@ -115,7 +109,14 @@
               <button class="btn btn-outline catalog-search-button" type="submit">검색</button>
             </div>
           </form>
-          <div id="searchStatus" class="search-status" aria-live="polite">검색 결과에서 곡을 선택하면 추천할 수 있어.</div>
+          <div class="catalog-sort-row">
+            <label for="catalogResultSort">검색 결과 정렬</label>
+            <select id="catalogResultSort" aria-label="검색 결과 정렬">
+              <option value="popular">인기순 · 검색 순위 기준</option>
+              <option value="recent">최신순 · 발매일 기준</option>
+            </select>
+          </div>
+          <div id="searchStatus" class="search-status" aria-live="polite">최대 50개 검색 결과에서 곡을 선택할 수 있어.</div>
           <button type="button" id="albumBack" class="btn btn-outline album-back hidden">← 앨범 검색 결과로 돌아가기</button>
           <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원"></div>
           <form id="addSongForm">

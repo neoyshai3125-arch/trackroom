@@ -120,3 +120,10 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 .canvas-sort-select:focus-visible{outline:2px solid #c6f16b;outline-offset:2px}
 .album-back{width:100%;margin:8px 0 12px;padding:11px 14px;font-size:12px}
 @media(max-width:720px){.canvas-heading{flex-wrap:wrap}.canvas-toolbar{width:100%;justify-content:space-between}.canvas-sort-wrap{flex:1}.canvas-toolbar .add-track-open{align-self:flex-end}}
+
+/* v5.6 - sort applies to catalog results only, never the bubble canvas. */
+.catalog-sort-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:13px 0 9px}
+.catalog-sort-row label{font-size:12px;font-weight:700;color:#cdd6ca}
+.catalog-sort-row select{max-width:230px;width:60%;padding:10px 12px;border-radius:10px;border:1px solid #596b56;color:#edf4ea;background:#19221b;font-size:12px}
+.catalog-sort-row select:focus-visible{outline:2px solid #ccf476;outline-offset:2px}
+@media(max-width:440px){.catalog-sort-row{align-items:flex-start;flex-direction:column}.catalog-sort-row select{width:100%;max-width:none}}

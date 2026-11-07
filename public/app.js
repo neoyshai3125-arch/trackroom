@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { roomCode: null, room: null, songs: [], sort: 'recent', user: null, pendingInvite: null, authMode: 'login' };
+const state = { roomCode: null, room: null, songs: [], sort: 'none', user: null, pendingInvite: null, authMode: 'login' };
 let refreshTimer = null;
 let toastTimer = null;
 let selectedTrack = null;
@@ -239,9 +239,8 @@ function applyBubbleCamera() {
   $('bubbleCanvas').classList.toggle('zoomed-in', zoom > 1.3);
 }
 function renderSongs() {
-  const songs = [...state.songs].sort((a,b) =>
-    (state.sort === 'popular' ? Number(b.likeCount || 0) - Number(a.likeCount || 0) : 0) ||
-    Number(b.createdAt || 0) - Number(a.createdAt || 0) || Number(b.id) - Number(a.id));
+  // Bubble positions are stable and independent of catalog search sorting.
+  const songs = [...state.songs].sort((a,b) => Number(a.id) - Number(b.id));
   const signature = `${state.sort}|` + songs.map(s => [s.id,s.title,s.artist,s.artworkUrl,s.likeCount,s.liked,s.nickname,s.note,s.startSeconds,s.endSeconds].join('|')).join('~');
   if (signature !== bubbleLastRender) {
     bubbleLastRender = signature;
@@ -502,7 +501,7 @@ function renderSelected(track) {
 async function resolveSearchCovers(seq) {
   const indices = catalogResults.map((song, i) =>
     song.sourcePlatform === 'lastfm' && !song.artworkUrl ? i : -1
-  ).filter(i => i >= 0);
+  ).filter(i => i >= 0).slice(0, 8); // Remaining covers resolve on selection or later retry.
   if (!indices.length) return;
   let checked = 0;
   for (const i of indices) {
@@ -543,7 +542,21 @@ async function resolveSearchCovers(seq) {
 }
 
 function renderCatalogResults() {
-  $('catalogResults').innerHTML = catalogResults.map((song, i) => {
+  const latest = $('catalogResultSort').value === 'recent';
+  const entries = catalogResults.map((song,index) => ({song,index}));
+  entries.sort((a,b) => {
+    if (latest) {
+      const dateA = Date.parse(a.song.releaseDate || '') || 0;
+      const dateB = Date.parse(b.song.releaseDate || '') || 0;
+      if (dateB !== dateA) return dateB - dateA;
+    }
+    // Apple does not provide play counts. The storefront search ranking is
+    // a relevance-based proxy only; preserve stable rank when dates are tied.
+    const rankA = Number.isFinite(Number(a.song.searchRank)) ? Number(a.song.searchRank) : a.index;
+    const rankB = Number.isFinite(Number(b.song.searchRank)) ? Number(b.song.searchRank) : b.index;
+    return rankA - rankB || a.index - b.index;
+  });
+  $('catalogResults').innerHTML = entries.map(({song,index:i}) => {
     const isAlbum = song.itemType === 'album';
     const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="this.parentElement.textContent='♫'" />` : '<span class="no-art">♫</span>';
     return `<button type="button" class="catalog-result" data-index="${i}" role="listitem" aria-label="${escaped(song.title)} ${isAlbum ? '앨범 수록곡 보기' : '곡 선택'}"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 수록곡 보기' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">${isAlbum ? '수록곡 ↗' : '선택 ↗'}</span></button>`;
@@ -573,7 +586,7 @@ async function searchSongs(event) {
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
     $('searchStatus').textContent = catalogResults.length
-      ? `${catalogResults.length}${kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 곡을 눌러 선택해 줘.'}`
+      ? `${catalogResults.length}${kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 인기순(검색 순위 기준)·최신순(발매일 기준)으로 정렬할 수 있어.'}`
       : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
     renderCatalogResults();
     if (platform === 'lastfm' && kind !== 'album') void resolveSearchCovers(seq);
@@ -706,6 +719,14 @@ async function init() {
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
   $('catalogSearchForm').addEventListener('submit', searchSongs);
+  $('catalogResultSort').addEventListener('change', () => {
+    renderCatalogResults();
+    const selectedKey = selectedTrack?.sourceId;
+    if (selectedKey) {
+      [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(b =>
+        b.classList.toggle('is-selected', catalogResults[Number(b.dataset.index)]?.sourceId === selectedKey));
+    }
+  });
   $('catalogResults').addEventListener('click', selectSearchResult);
   $('catalogSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); clearAlbumNavigation(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
   $('songQuery').addEventListener('input', () => {
@@ -717,14 +738,6 @@ async function init() {
   initBubbleCanvas();
   $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();clearAlbumNavigation();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
   $('albumBack').addEventListener('click', backToAlbumResults);
-  $('canvasSort').addEventListener('change', e => {
-    state.sort = e.target.value === 'popular' ? 'popular' : 'recent';
-    bubbleLastRender = '';
-    bubbleRandomIndex = 0;
-    bubbleCanvasCamera = { x:0, y:0, zoom:1 };
-    closeBubbleDetail();
-    renderSongs();
-  });
   $('shareBtn').addEventListener('click',copyShare);
   renderAccount();
   catalogHint();

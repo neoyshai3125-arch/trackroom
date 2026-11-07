@@ -627,6 +627,164 @@ def spotify_access_token():
         return token
 
 
+SEARCH_RESULT_LIMIT = 50
+# These are *localized titles*, not machine translations. Keep special aliases
+# small and explicit; a public iTunes Store search has no translation endpoint.
+SEARCH_ALIASES = {
+    '괴수의 꽃노래': '怪獣の花唄',
+    '怪獣の花唄': '괴수의 꽃노래',
+}
+
+
+def apple_search_request(query, country, entity='song', limit=120, attribute=None):
+    """All public iTunes searches share Apple's modest request-rate budget."""
+    params = {'term':query, 'media':'music', 'entity':entity, 'country':country,
+              'limit': min(int(limit), 200)}
+    if attribute: params['attribute'] = attribute
+    return apple_results_raw(params)
+
+
+def apple_results_raw(params):
+    url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode(params)
+    with APPLE_QUERY_LOCK:
+        pause = max(0.0, APPLE_NEXT_QUERY[0] - time.monotonic())
+        if pause: time.sleep(pause)
+        APPLE_NEXT_QUERY[0] = time.monotonic() + APPLE_MIN_INTERVAL
+    return request_json(url, headers={'User-Agent':'TRACKROOM/0.56'}).get('results', [])
+
+
+def normalize_apple_record(row, country, item_type='track'):
+    if not isinstance(row,dict): return None
+    if item_type == 'album':
+        sid = row.get('collectionId')
+        title = row.get('collectionName') or ''
+        artist = row.get('artistName') or ''
+        link = row.get('collectionViewUrl') or ''
+        if not (str(sid).isdigit() and title and artist): return None
+        result = {'itemType':'album', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
+                  'sourceId':str(sid), 'title':title[:120], 'artist':artist[:120],
+                  'album':title[:120], 'storeCountry':country, 'musicUrl':link[:500],
+                  'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
+                  'durationMs':None, 'isrc':'', 'releaseDate':row.get('releaseDate','')}
+    else:
+        if row.get('kind') != 'song' or not str(row.get('trackId','')).isdigit(): return None
+        link=row.get('trackViewUrl') or ''
+        result={'itemType':'track','sourcePlatform':'apple','sourceCatalog':'itunes_store',
+                'sourceId':str(row['trackId']), 'title':str(row.get('trackName') or '')[:120],
+                'artist':str(row.get('artistName') or '')[:120],
+                'album':str(row.get('collectionName') or '')[:120],
+                'musicUrl':link[:500], 'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
+                'durationMs':row.get('trackTimeMillis') or None, 'isrc':'',
+                'releaseDate':row.get('releaseDate','')}
+    try: u=urlparse(link)
+    except (ValueError,TypeError): return None
+    if not (u.scheme == 'https' and u.hostname in ('itunes.apple.com','music.apple.com')):return None
+    if not (result['title'] and result['artist']): return None
+    return result
+
+
+def apple_dedupe_key(record):
+    # Cross-country results often use different store IDs for the same release.
+    # Keep albums distinct: studio, remaster, compilation versions are not equal.
+    return (record.get('itemType'), artwork_key(record['title']),
+            artwork_key(record['artist']), artwork_key(record.get('album') or record['title']))
+
+
+def blend_storefronts(pairs):
+    """Mix US and JP instead of letting the first country's 50 items crowd out JP."""
+    us=[p for p in pairs if p[0]=='US']
+    jp=[p for p in pairs if p[0]=='JP']
+    extra=[p for p in pairs if p[0] not in ('US','JP')]
+    combined=[]
+    for i in range(max(len(us),len(jp))):
+        if i<len(us): combined.append(us[i])
+        if i<len(jp): combined.append(jp[i])
+    return combined+extra
+
+
+def merge_apple_results(pairs, max_results=SEARCH_RESULT_LIMIT):
+    unique={}
+    for rank, (country, row) in enumerate(blend_storefronts(pairs)):
+        kind = 'album' if (row.get('wrapperType') == 'collection' or row.get('collectionType') == 'Album' or ('collectionId' in row and 'trackId' not in row)) else 'track'
+        item = normalize_apple_record(row, country, kind)
+        if not item: continue
+        key=apple_dedupe_key(item)
+        if key in unique:
+            # Retain first entry and its rank; fill missing image from another storefront.
+            if not unique[key].get('artworkUrl') and item.get('artworkUrl'):
+                unique[key]['artworkUrl']=item['artworkUrl']
+            continue
+        item['searchRank']=rank
+        unique[key]=item
+        if len(unique) >= max_results: break
+    return list(unique.values())
+
+
+def apple_catalog_search(query, search_mode='track'):
+    if search_mode == 'album':
+        return search_albums('apple', query)
+    # Combine both countries even when US already returned results, because
+    # Japanese releases frequently do not appear in the US iTunes catalogue.
+    pairs=[]
+    for country in ('US','JP'):
+        rows=apple_search_request(query,country,'song',150,
+                                  'artistTerm' if search_mode == 'artist' else None)
+        pairs.extend((country,r) for r in rows if isinstance(r,dict))
+    results=merge_apple_results(pairs)
+    # A title such as MONOLITH may be indexed as an album even when its tracks
+    # are missing from an ordinary song search. Try a well-matched album once.
+    if search_mode == 'track':
+        known_alias = SEARCH_ALIASES.get(query.strip())
+        variants = [known_alias] if known_alias else []
+        # If a compound query is not indexed, try its components as fallback.
+        if not results and len(query.split()) > 1:
+            variants.extend([query.split()[0], ' '.join(query.split()[1:])])
+        for alias in [v for v in variants if v and v != query][:2]:
+            extra_pairs=[]
+            for country in ('JP','US'):
+                extra_pairs.extend((country,r) for r in apple_search_request(alias,country,'song',100)
+                                   if isinstance(r,dict))
+            # Prefer a known localized spelling even when the original query
+            # already returned 50 less relevant matches.
+            pairs = extra_pairs + pairs if alias == known_alias else pairs + extra_pairs
+            results=merge_apple_results(pairs)
+            if len(results) >= SEARCH_RESULT_LIMIT and not known_alias: break
+        # Search for same-titled albums; expand only the closest exact album.
+        # This fixes missing tracks without indiscriminately injecting unrelated
+        # albums into generic queries, and preserves the original song titles.
+        if len(results) < 25 and (not results or (query.isascii() and len(query.split()) <= 2)):
+            album_pairs=[]
+            for country in ('US','JP'):
+                album_pairs += [(country, r) for r in apple_search_request(query,country,'album',40)
+                                if isinstance(r,dict)]
+            matching_albums=[a for a in merge_apple_results(album_pairs,60) if a.get('itemType') == 'album']
+            query_key=artwork_key(query)
+            exact_albums=[album for album in matching_albums
+                          if artwork_key(album['title']) == query_key]
+            # For a mixed artist+album query, require album and artist name to
+            # both appear as full tokens in the query before expanding.
+            if not exact_albums and ' ' in query:
+                exact_albums=[a for a in matching_albums if
+                              artwork_key(a['title']) in query_key and
+                              artwork_key(a['artist']) in query_key]
+            if len(exact_albums) == 1:
+                album=exact_albums[0]
+                try:
+                    tracks=fetch_album_tracks(album)
+                    for t in tracks:
+                        t.setdefault('releaseDate',album.get('releaseDate',''))
+                    results=merge_apple_results(pairs,120)
+                    seen={apple_dedupe_key(r) for r in results}
+                    for t in tracks:
+                        if apple_dedupe_key(t) not in seen:
+                            t['searchRank']=len(results)
+                            results.append(t)
+                            seen.add(apple_dedupe_key(t))
+                except (APIError,ValueError) as exc:
+                    print(f'[TRACKROOM search] Album expansion failed: {exc}',flush=True)
+    return results[:SEARCH_RESULT_LIMIT]
+
+
 def search_catalog(platform, query, search_mode='track'):
     """Search the requested provider; never fall back silently to another catalog."""
     if platform == 'lastfm':
@@ -674,15 +832,15 @@ def search_catalog(platform, query, search_mode='track'):
             return as_list((obj.get('toptracks') or {}).get('track'))
         # The UI offers explicit song/artist search so searches for 'IU' return IU's tracks.
         if search_mode == 'artist':
-            items = unpack(call_lastfm('artist.getTopTracks', artist=query, autocorrect=1, limit=15), 'artist.getTopTracks')
+            items = unpack(call_lastfm('artist.getTopTracks', artist=query, autocorrect=1, limit=65), 'artist.getTopTracks')
         else:
-            items = unpack(call_lastfm('track.search', track=query, limit=20), 'track.search')
+            items = unpack(call_lastfm('track.search', track=query, limit=75), 'track.search')
         if not items and search_mode == 'track' and ' ' in query:
             # Handle common searches like '아이유 밤편지' without requiring an exact song title.
             tokens = query.split()
             for split_at in range(1, min(len(tokens), 4)):
                 obj = call_lastfm('track.search', artist=' '.join(tokens[:split_at]),
-                                  track=' '.join(tokens[split_at:]), limit=15)
+                                  track=' '.join(tokens[split_at:]), limit=75)
                 items = unpack(obj, 'track.search')
                 if items:
                     break
@@ -695,8 +853,9 @@ def search_catalog(platform, query, search_mode='track'):
             if key in seen:
                 continue
             seen.add(key)
+            result['searchRank']=len(results)
             results.append(result)
-            if len(results) >= 15:
+            if len(results) >= SEARCH_RESULT_LIMIT:
                 break
         return enrich_lastfm_results(results, query)
     if platform == 'spotify':
@@ -723,7 +882,7 @@ def search_catalog(platform, query, search_mode='track'):
         developer_token = os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN', '').strip()
         if developer_token:
             url = 'https://api.music.apple.com/v1/catalog/kr/search?' + urllib.parse.urlencode({
-                'term': query, 'types': 'songs', 'limit': 15})
+                'term': query, 'types': 'songs', 'limit': 50})
             obj = request_json(url, {'Authorization': 'Bearer ' + developer_token})
             result = []
             for t in obj.get('results', {}).get('songs', {}).get('data', []):
@@ -738,38 +897,10 @@ def search_catalog(platform, query, search_mode='track'):
                     'artist':attr.get('artistName',''), 'album':attr.get('albumName', ''),
                     'musicUrl':item_url, 'artworkUrl':safe_artwork(art),
                     'durationMs':attr.get('durationInMillis') or None,
-                    'isrc':attr.get('isrc', '')})
+                    'isrc':attr.get('isrc', ''), 'releaseDate':attr.get('releaseDate',''),
+                    'searchRank':len(result)})
             return result
-        # South Korea has Apple Music streaming, but not iTunes Store music purchases.
-        # The public iTunes Search API searches the *store* catalog, not Apple Music.
-        # Query supported music storefronts (US, then JP) instead of KR, which can
-        # consistently return no song matches even for well-known Korean tracks.
-        # This remains a metadata fallback, NOT Korean Apple Music availability.
-        store_results = []
-        for country in ('US', 'JP'):
-            params = {'term': query, 'media': 'music', 'entity': 'song',
-                      'country': country, 'limit': 15}
-            if search_mode == 'artist':
-                params['attribute'] = 'artistTerm'
-            url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode(params)
-            obj = request_json(url)
-            store_results = obj.get('results') or []
-            if store_results:
-                break
-        result = []
-        for t in store_results:
-            if t.get('kind') != 'song' or not t.get('trackId'):
-                continue
-            link = t.get('trackViewUrl', '')
-            if urlparse(link).hostname not in ('music.apple.com', 'itunes.apple.com'):
-                continue
-            result.append({'sourcePlatform': 'apple', 'sourceCatalog': 'itunes_store',
-                'sourceId': str(t['trackId']), 'title': t.get('trackName',''),
-                'artist': t.get('artistName',''), 'album': t.get('collectionName',''),
-                'musicUrl': link, 'artworkUrl': safe_artwork(t.get('artworkUrl100','')),
-                'durationMs': t.get('trackTimeMillis') or None,
-                'isrc': ''})
-        return result
+        return apple_catalog_search(query, search_mode)
     raise APIError('이 음원 플랫폼은 공식 사이트 내 검색을 아직 지원하지 않아. 다른 검색 제공원을 선택해 줘.', 422)
 
 
@@ -805,31 +936,14 @@ def valid_lastfm_url(url):
 def search_albums(platform, query):
     """Return album choices, not creatable song choices."""
     if platform == 'apple':
-        # Public iTunes storefronts, not the separate Korean Apple Music catalog.
-        for country in ('US', 'JP'):
-            params = urllib.parse.urlencode({'term':query, 'country':country,
-                                             'media':'music', 'entity':'album', 'limit':20})
-            rows = request_json('https://itunes.apple.com/search?' + params).get('results', [])
-            result = []
-            for row in rows:
-                if not isinstance(row, dict) or row.get('collectionType') not in (None,'Album'):
-                    continue
-                album_id = row.get('collectionId')
-                title, artist = row.get('collectionName',''), row.get('artistName','')
-                link = row.get('collectionViewUrl','')
-                if not (str(album_id).isdigit() and title and artist and
-                        urlparse(link).hostname in ('itunes.apple.com','music.apple.com')):
-                    continue
-                result.append({'itemType':'album', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
-                               'sourceId':str(album_id), 'title':title[:120], 'artist':artist[:120],
-                               'album':title[:120], 'storeCountry':country,
-                               'musicUrl':link[:500], 'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
-                               'durationMs':None, 'isrc':''})
-            if result:
-                return result[:15]
-        return []
+        pairs=[]
+        for country in ('US','JP'):
+            rows=apple_search_request(query,country,'album',125)
+            pairs.extend((country,row) for row in rows if isinstance(row,dict))
+        # Treat the search engine's order as a relevance-based popularity proxy.
+        return [a for a in merge_apple_results(pairs) if a['itemType'] == 'album']
     if platform == 'lastfm':
-        albums = (lastfm_api('album.search', album=query, limit=20).get('results') or {}).get('albummatches') or {}
+        albums = (lastfm_api('album.search', album=query, limit=70).get('results') or {}).get('albummatches') or {}
         rows = albums.get('album') or []
         rows = rows if isinstance(rows, list) else [rows] if isinstance(rows,dict) else []
         result=[]
@@ -845,8 +959,8 @@ def search_albums(platform, query):
             result.append({'itemType':'album','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
                            'sourceId':aid,'title':title[:120],'artist':artist[:120],
                            'album':title[:120],'musicUrl':link[:500],
-                           'artworkUrl':'','durationMs':None,'isrc':''})
-            if len(result)==15:break
+                           'artworkUrl':'','durationMs':None,'isrc':'','searchRank':len(result)})
+            if len(result)==SEARCH_RESULT_LIMIT:break
         return result
     raise APIError('앨범 검색을 지원하지 않는 플랫폼이야.',422)
 
@@ -878,7 +992,9 @@ def fetch_album_tracks(album):
                             'album':row.get('collectionName','')[:120],
                             'musicUrl':link[:500],
                             'artworkUrl':safe_artwork(row.get('artworkUrl100','')) or album.get('artworkUrl',''),
-                            'durationMs':row.get('trackTimeMillis') or None,'isrc':''})
+                            'durationMs':row.get('trackTimeMillis') or None,'isrc':'',
+                            'releaseDate':row.get('releaseDate',''),
+                            'trackNumber':row.get('trackNumber',0)})
         return [t for t in results if t['title'] and t['artist']][:80]
     if album.get('sourcePlatform') == 'lastfm':
         response = lastfm_api('album.getinfo', artist=album['artist'], album=album['title'], autocorrect=1)
@@ -899,7 +1015,7 @@ def fetch_album_tracks(album):
             results.append({'itemType':'track','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
                             'sourceId':song_id,'title':title[:120],'artist':artist[:120],
                             'album':album['title'][:120], 'musicUrl':link[:500],
-                            'artworkUrl':'','durationMs':None,'isrc':''})
+                            'artworkUrl':'','durationMs':None,'isrc':'','searchRank':len(results)})
         return results[:80]
     raise APIError('앨범 검색 결과가 올바르지 않아.',422)
 
@@ -1156,11 +1272,11 @@ class Handler(BaseHTTPRequestHandler):
                     tracks = search_catalog(platform, query if search_mode != 'artist' else query, search_mode)
                 tracks = [t for t in tracks if t.get('sourceId') and t.get('title') and t.get('artist') and t.get('musicUrl')]
                 with CACHE_LOCK:
-                    SEARCH_CACHE[key] = (time.time() + 120, tracks[:15])
+                    SEARCH_CACHE[key] = (time.time() + 180, tracks[:SEARCH_RESULT_LIMIT])
                     if len(SEARCH_CACHE) > 200:
                         SEARCH_CACHE.clear()
             response = []
-            for song in tracks[:15]:
+            for song in tracks[:SEARCH_RESULT_LIMIT]:
                 response.append({**song, 'selectionToken': sign_selection(song, user['id'])})
             return self.send_json({'results': response, 'catalog':
                 response[0]['sourceCatalog'] if response else
