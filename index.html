@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101213" />
   <meta name="description" content="친구들과 각자 좋아하는 노래와 추천 구간을 공유하는 공간" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=6.3.1" />
   <title>TRACKROOM — 오늘의 노래를 나누는 공간</title>
 </head>
 <body>
@@ -78,7 +78,7 @@
           <button type="button" id="roomMenuRestoreCovers" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">▧</span><span><strong>앨범 커버 다시 찾기</strong><small>커버 없는 음악 재검색</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼.</p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.3.1</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -205,6 +205,6 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=6.4" defer></script>
 </body>
 </html>

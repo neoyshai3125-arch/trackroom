@@ -10,7 +10,12 @@ let catalogViewInfo = null;
 let searchCounter = 0;
 let bubbleSelectedId = null;
 let bubbleLastRender = '';
-let bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+// TRACKROOM v6.4: the previous smallest zoom is now the starting view.
+// The furthest zoom-out fits approximately 50 bubble positions on the current screen.
+const DEFAULT_BUBBLE_ZOOM = 0.52;
+const MAX_BUBBLE_ZOOM = 2.15;
+const OVERVIEW_BUBBLE_COUNT = 50;
+let bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
 let bubbleRandomIndex = 0;
 let bubblePointerState = new Map();
 let bubbleDrag = null;
@@ -140,7 +145,7 @@ function showLanding() {
   $('roomView').classList.add('hidden');
   closeAddPanel();
   closeBubbleDetail();
-  bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+  bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
   bubbleLastRender = '';
   history.replaceState({}, '', '/');
 
@@ -148,7 +153,7 @@ function showLanding() {
 }
 function goToRoom(code) {
   if (state.roomCode !== code) {
-    bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+    bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
     bubbleLastRender = '';
     bubbleSelectedId = null;
   }
@@ -227,6 +232,24 @@ function bubblePosition(index) {
   const radius = 192 * Math.sqrt(index);
   const size = 134 + (index * 37 % 25);
   return { x: Math.round(Math.cos(angle) * radius), y: Math.round(Math.sin(angle) * radius), size };
+}
+function minimumBubbleZoom() {
+  const viewport = $('bubbleCanvas');
+  if (!viewport) return 0.12;
+  const width = viewport.clientWidth || window.innerWidth || 390;
+  const height = viewport.clientHeight || window.innerHeight || 740;
+  let extentX = 0;
+  let extentY = 0;
+  for (let i = 0; i < OVERVIEW_BUBBLE_COUNT; i++) {
+    const bubble = bubblePosition(i);
+    const radius = bubble.size / 2;
+    extentX = Math.max(extentX, Math.abs(bubble.x) + radius);
+    extentY = Math.max(extentY, Math.abs(bubble.y) + radius);
+  }
+  // Reserve padding for the room title and the mobile quick-action buttons.
+  const widthFit = width * 0.88 / (extentX * 2);
+  const heightFit = height * 0.83 / (extentY * 2);
+  return Math.min(DEFAULT_BUBBLE_ZOOM, Math.max(0.08, Math.min(widthFit, heightFit)));
 }
 // The iTunes Search API provides 100x100 artwork links. Apple CDN images
 // support larger size variants without an additional music-search request.
@@ -363,7 +386,7 @@ function setBubbleZoom(newZoom, clientX, clientY) {
   const x = (clientX ?? (rect.left+rect.width/2)) - (rect.left + rect.width/2);
   const y = (clientY ?? (rect.top+rect.height/2)) - (rect.top + rect.height/2);
   const previousZoom = bubbleCanvasCamera.zoom;
-  const target = Math.min(2.15, Math.max(.52, newZoom));
+  const target = Math.min(MAX_BUBBLE_ZOOM, Math.max(minimumBubbleZoom(), newZoom));
   const ratio = target / previousZoom;
   bubbleCanvasCamera.x = x - (x - bubbleCanvasCamera.x) * ratio;
   bubbleCanvasCamera.y = y - (y - bubbleCanvasCamera.y) * ratio;
@@ -439,6 +462,10 @@ function initBubbleCanvas() {
   };
   viewport.addEventListener('pointerup',releasePointer);
   viewport.addEventListener('pointercancel',releasePointer);
+  window.addEventListener('resize', () => {
+    if (!document.body.classList.contains('room-active')) return;
+    if (bubbleCanvasCamera.zoom < minimumBubbleZoom()) setBubbleZoom(minimumBubbleZoom());
+  });
   viewport.addEventListener('wheel',e=>{if (e.target.closest('.bubble-detail')) return; e.preventDefault(); setBubbleZoom(bubbleCanvasCamera.zoom * (e.deltaY > 0 ? .9 : 1.1), e.clientX,e.clientY);},{passive:false});
   viewport.addEventListener('keydown', e=> {
     if (e.target !== viewport) return;
@@ -465,11 +492,11 @@ function initBubbleCanvas() {
   });
   $('bubbleZoomIn').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom*1.2));
   $('bubbleZoomOut').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom/1.2));
-  const resetView = () => { bubbleCanvasCamera={x:0,y:0,zoom:1}; applyBubbleCamera(); closeBubbleDetail(); };
+  const resetView = () => { bubbleCanvasCamera={x:0,y:0,zoom:DEFAULT_BUBBLE_ZOOM}; applyBubbleCamera(); closeBubbleDetail(); };
   const shuffleView = () => {
     if (state.songs.length < 2) return toast('새로운 영역을 탐색하려면 노래를 두 곡 이상 등록해 줘.');
     bubbleRandomIndex = (bubbleRandomIndex + 1 + Math.floor(Math.random()*Math.max(1,state.songs.length-1))) % state.songs.length;
-    bubbleCanvasCamera.zoom = 1;
+    bubbleCanvasCamera.zoom = DEFAULT_BUBBLE_ZOOM;
     panToSongIndex(bubbleRandomIndex);
     closeBubbleDetail();
   };
