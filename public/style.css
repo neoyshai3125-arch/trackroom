@@ -180,3 +180,140 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 .catalog-discography-card em{position:absolute;top:12px;left:12px;padding:3px 6px;font-style:normal;font-size:9px;background:#1d2b21e0;color:#e2f4c1;border-radius:5px;}
 .catalog-artist-track-heading{margin:16px 0 9px;padding-top:12px;border-top:1px solid #536a50;}
 @media(max-width:400px){.catalog-discography-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.catalog-artist-header-avatar{width:68px;height:68px}}
+
+/* TRACKROOM v6.1.1: Prevent artist cards from collapsing into stripes when
+   a 50-result directory is inside the vertically scrollable flex list.
+   overflow:hidden made the flex item's automatic minimum size zero. */
+.catalog-results > .catalog-artist-result {
+  flex: 0 0 auto;
+  min-height: 82px;
+}
+@media(max-width:440px) {
+  .catalog-results > .catalog-artist-result { min-height: 72px; }
+}
+
+/* TRACKROOM v6.2 — immersive, viewport-filling listening room. Landing page unchanged. */
+body.room-active { overflow:hidden; }
+body.room-active .shell { width:100%; max-width:none; margin:0; }
+body.room-active .site-header { display:none; }
+body.room-active .orb { display:none; }
+body.room-active #roomView {
+  position:fixed; z-index:20; inset:0; width:100%; height:100vh; height:100dvh;
+  padding:0; margin:0; overflow:hidden; background:#101916;
+}
+body.room-active .room-layout {
+  position:absolute; inset:0; display:block; width:100%; height:100%; margin:0;
+}
+body.room-active .song-section { width:100%; height:100%; min-width:0; }
+body.room-active .bubble-canvas {
+  width:100%; height:100%; min-height:0; max-height:none;
+  margin:0; border:0; border-radius:0; background:
+    radial-gradient(ellipse at 25% 30%,#223a2e 0%,transparent 44%),
+    radial-gradient(ellipse at 82% 80%,#182f2d 0%,transparent 47%),
+    #101916;
+}
+body.room-active .canvas-backdrop { opacity:.45; }
+body.room-active .room-hero {
+  position:absolute; z-index:24; top:0; left:0; right:0;
+  padding:calc(20px + env(safe-area-inset-top,0px)) 30px 12px;
+  display:flex; align-items:center; justify-content:flex-start; gap:17px;
+  border:0; background:linear-gradient(180deg,#0b140fe8 0%,#0b140fc0 68%,transparent 100%);
+  pointer-events:none;
+}
+body.room-active .room-hero > * { pointer-events:auto; }
+body.room-active .room-identity { min-width:0; display:flex; flex-direction:column; gap:5px; }
+body.room-active .room-identity-eyebrow {
+  color:#b2c79f; font-size:9px; font-weight:850; letter-spacing:1.5px;
+}
+body.room-active .room-identity-eyebrow span { color:var(--lime); }
+body.room-active .room-hero h1 {
+  font-size:clamp(17px,2.25vw,26px); letter-spacing:-.65px; line-height:1.24;
+  font-weight:850; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+body.room-active .room-meta { font-size:10px; gap:9px; color:#bdceba; flex-wrap:wrap; }
+body.room-active .room-meta b { font-size:10px; }
+body.room-active .room-top-mark { margin-left:auto; font-size:10px; letter-spacing:1.8px; font-weight:800; color:#9bb394; }
+.room-menu-toggle {
+  flex:none; width:48px; height:48px; border-radius:16px; display:grid; place-items:center;
+  border:1px solid #59735a; color:#e5f9d7; background:#1b2a21ed;
+  box-shadow:0 10px 32px #0007; backdrop-filter:blur(12px);
+}
+.room-menu-toggle:hover,.room-menu-toggle:focus-visible { border-color:var(--lime); outline:2px solid #ccf47633; }
+.hamburger-lines { display:flex; flex-direction:column; gap:5px; }
+.hamburger-lines i { width:21px; height:2px; border-radius:2px; display:block; background:#e9f7de; }
+.hamburger-lines i:nth-child(2) { width:15px; }
+.room-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+body.room-active .canvas-tip { top:auto; bottom:21px; left:50%; transform:translateX(-50%); white-space:nowrap; opacity:.68; }
+body.room-active .canvas-controls { left:24px; right:auto; bottom:24px; z-index:12; }
+body.room-active .bubble-detail {
+  left:auto; right:24px; top:auto; bottom:104px;
+  width:min(375px,calc(100% - 48px)); max-height:min(65dvh,610px);
+}
+.room-add-fab {
+  position:fixed; right:25px; bottom:25px; bottom:calc(25px + env(safe-area-inset-bottom,0px));
+  z-index:35; display:flex; align-items:center; gap:12px; min-height:62px;
+  border:1px solid #dbf7b5; border-radius:100px; padding:7px 23px 7px 8px;
+  background:var(--lime); color:#182516; font-weight:850; font-size:14px;
+  box-shadow:0 16px 42px #000b,0 0 34px #b9fb7533; transition:transform .16s,box-shadow .16s;
+}
+.room-add-fab:hover,.room-add-fab:focus-visible {
+  transform:translateY(-3px); box-shadow:0 18px 45px #000c,0 0 40px #ccf47663;
+  outline:3px solid #d6ff8860; outline-offset:3px;
+}
+.room-add-fab-icon {
+  display:grid; place-items:center; width:46px; height:46px; border-radius:50%;
+  font-size:30px; line-height:1; font-weight:400; background:#1b2c1e; color:var(--lime);
+}
+.room-menu-backdrop { position:fixed; inset:0; z-index:74; width:100%; border:0; padding:0; background:#040a06b8; cursor:default; backdrop-filter:blur(5px); }
+.room-menu {
+  position:fixed; z-index:75; top:0; left:0; bottom:0; width:min(370px,90vw);
+  overflow-y:auto; overscroll-behavior:contain; padding:calc(34px + env(safe-area-inset-top,0px)) 22px 28px;
+  border-right:1px solid #506d50; border-radius:0 26px 26px 0;
+  background:linear-gradient(160deg,#24372a 0%,#16251c 55%,#131e18 100%);
+  box-shadow:20px 0 72px #000b;
+}
+.room-menu-head { position:relative; padding:3px 0 27px; border-bottom:1px solid #496149; }
+.room-menu-overline { font-size:10px; letter-spacing:1.9px; color:#b3c8a6; font-weight:850; }
+.room-menu-head h2 { margin:21px 0 4px; font-family:'DM Sans',sans-serif; font-size:32px; letter-spacing:-2px; }
+.room-menu-head h2 span { color:var(--lime); }
+.room-menu-head p { margin:0; font-size:12px; color:#afc4aa; }
+.room-menu-close { position:absolute; right:0; top:-7px; width:36px; height:36px; border-radius:50%; border:1px solid #597459; color:#e7f4de; background:#283e2d; }
+.room-menu-actions { display:flex; flex-direction:column; gap:10px; padding-top:24px; }
+.room-menu-action {
+  width:100%; display:flex; align-items:center; gap:13px; padding:14px 12px;
+  border:1px solid #466348; border-radius:15px; background:#253a2b; color:#edf7e7;
+  text-align:left; transition:background .16s,border-color .16s;
+}
+.room-menu-action:hover,.room-menu-action:focus-visible { background:#334e37; border-color:#c2f486; outline:0; }
+.room-menu-icon { display:grid; place-items:center; flex:none; width:40px; height:40px; border-radius:12px; background:#152319; font-size:23px; color:var(--lime); }
+.room-menu-action > span:nth-child(2) { flex:1; display:flex; flex-direction:column; gap:4px; }
+.room-menu-action strong { font-size:13px; }
+.room-menu-action small { font-size:10px; color:#a9bda5; }
+.room-menu-action .menu-arrow { color:#bddd9c; }
+.room-menu-note { font-size:11px; color:#879e89; margin-top:34px; line-height:1.8; }
+@media (max-width:720px) {
+  body.room-active .room-hero { gap:11px; padding:calc(14px + env(safe-area-inset-top,0px)) 15px 16px; }
+  .room-menu-toggle { width:44px; height:44px; border-radius:13px; }
+  body.room-active .room-identity-eyebrow { font-size:8px; letter-spacing:.9px; }
+  body.room-active .room-meta { font-size:9px; gap:7px; }
+  body.room-active .room-top-mark { display:none; }
+  body.room-active .canvas-tip { bottom:148px; font-size:8px; padding:8px 10px; }
+  body.room-active .canvas-controls { left:14px; right:auto; bottom:91px; gap:3px; padding:4px; }
+  body.room-active .canvas-action { width:30px; height:31px; }
+  body.room-active .bubble-detail { left:12px; right:12px; bottom:157px; width:auto; max-height:calc(100dvh - 275px); padding:16px; }
+  .room-add-fab { right:16px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); min-height:58px; font-size:13px; padding-right:18px; }
+  .room-add-fab-icon { width:42px; height:42px; }
+  .room-menu { width:min(345px,90vw); border-radius:0 20px 20px 0; }
+}
+@media (max-width:380px) {
+  body.room-active .room-meta { font-size:8px; }
+  body.room-active .canvas-controls { transform:scale(.9); transform-origin:left bottom; }
+  body.room-active .canvas-tip { display:none; }
+  .room-add-fab { min-height:54px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .room-add-fab,.room-menu-action { transition:none; }
+}
+/* Keep the compact room header horizontal on phones. Legacy landing styles
+   previously switched .room-hero into a column at narrow viewports. */
+body.room-active .room-hero { flex-direction:row; align-items:center; }
