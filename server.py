@@ -86,7 +86,22 @@ def db():
     finally:
         conn.close()
 
+def verify_persistent_storage():
+    """Never silently create a disposable account database on Render Free.
+
+    A missing DATABASE_URL used to look like users had been deleted after every
+    restart, because the app started with a brand-new local SQLite database.
+    Local development can still use SQLite when RENDER isn't set.
+    """
+    if os.environ.get('RENDER', '').lower() in ('true', '1') and not DATABASE_URL:
+        raise RuntimeError(
+            'TRACKROOM 데이터 보호: Render에서는 영구 PostgreSQL DATABASE_URL을 '
+            '먼저 설정해 주세요. 임시 SQLite로 실행하면 회원과 방이 사라집니다.'
+        )
+
+
 def init_db():
+    verify_persistent_storage()
     if not DATABASE_URL:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with db() as conn:
@@ -684,6 +699,154 @@ def normalize_apple_record(row, country, item_type='track'):
     return result
 
 
+
+def normalize_apple_artist(row, country):
+    """The public iTunes artist resource has no guaranteed portrait image."""
+    if not isinstance(row, dict) or row.get('wrapperType') != 'artist':
+        return None
+    artist_id = str(row.get('artistId') or '')
+    name = row.get('artistName') or ''
+    link = row.get('artistLinkUrl') or ''
+    if not (artist_id.isdigit() and isinstance(name,str) and name.strip()
+            and isinstance(link,str)):
+        return None
+    url = urlparse(link)
+    if url.scheme != 'https' or url.hostname not in ('itunes.apple.com', 'music.apple.com'):
+        return None
+    return {
+        'itemType':'artist', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
+        'sourceId': artist_id, 'title':name.strip()[:120], 'artist':name.strip()[:120],
+        'album':'', 'storeCountry':country, 'musicUrl':link[:500],
+        'genre':str(row.get('primaryGenreName') or '')[:80],
+        'artworkUrl':'', 'durationMs':None, 'isrc':''
+    }
+
+
+def search_artists(platform, query):
+    """Return artist *profiles*, never song suggestions."""
+    if platform == 'apple':
+        pairs=[]
+        for country in ('US','JP'):
+            rows=apple_search_request(query,country,'musicArtist',80,'artistTerm')
+            pairs.extend((country,row) for row in rows if isinstance(row,dict))
+        artists=[]
+        seen=set()
+        for country,row in blend_storefronts(pairs):
+            item=normalize_apple_artist(row,country)
+            if not item or item['sourceId'] in seen:continue
+            seen.add(item['sourceId'])
+            item['searchRank']=len(artists)
+            artists.append(item)
+            if len(artists)>=SEARCH_RESULT_LIMIT:break
+        return artists
+    if platform == 'lastfm':
+        obj=lastfm_api('artist.search', artist=query, limit=SEARCH_RESULT_LIMIT)
+        matches=(obj.get('results') or {}).get('artistmatches') or {}
+        rows=matches.get('artist') or []
+        if isinstance(rows,dict): rows=[rows]
+        if not isinstance(rows,list): rows=[]
+        artists=[]
+        seen=set()
+        for row in rows:
+            if not isinstance(row,dict):continue
+            name,link=row.get('name'),row.get('url')
+            if not (isinstance(name,str) and name.strip() and isinstance(link,str)):continue
+            link=link.replace('http://','https://',1)
+            if not valid_lastfm_url(link):continue
+            key=artwork_key(name)
+            if key in seen:continue
+            seen.add(key)
+            sid=str(row.get('mbid') or '').strip() or ('url-' + hashlib.sha256(link.encode()).hexdigest()[:32])
+            artists.append({
+                'itemType':'artist','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+                'sourceId':sid,'title':name.strip()[:120],'artist':name.strip()[:120],
+                'album':'','musicUrl':link[:500],'artworkUrl':'','genre':'',
+                'searchRank':len(artists),'durationMs':None,'isrc':''})
+            if len(artists)>=SEARCH_RESULT_LIMIT:break
+        return artists
+    raise APIError('아티스트 검색을 지원하지 않는 플랫폼이야.',422)
+
+
+def apple_artist_lookup(artist_id, country, sort=None):
+    params={'id':artist_id,'entity':'song','country':country,'limit':200}
+    if sort:params['sort']=sort
+    with APPLE_QUERY_LOCK:
+        delay=max(0.0, APPLE_NEXT_QUERY[0]-time.monotonic())
+        if delay:time.sleep(delay)
+        APPLE_NEXT_QUERY[0]=time.monotonic()+APPLE_MIN_INTERVAL
+    url='https://itunes.apple.com/lookup?' + urllib.parse.urlencode(params)
+    return request_json(url,headers={'User-Agent':'TRACKROOM/0.59'},timeout=10).get('results',[])
+
+
+def artist_tracks(artist):
+    """Artist ID scoped lookup, filtering out unrelated contributors/identical names."""
+    if artist.get('itemType') != 'artist':
+        raise APIError('아티스트 프로필을 먼저 선택해 줘.',422)
+    if artist.get('sourcePlatform') == 'apple':
+        aid=str(artist.get('sourceId') or '')
+        country=artist.get('storeCountry','US')
+        if not aid.isdigit() or country not in ('US','JP'):
+            raise APIError('유효한 아티스트 정보를 다시 선택해 줘.',422)
+        # Combine leading catalog songs and recent releases; don't let the first
+        # 50 popular entries prevent new songs from ever appearing.
+        buckets=[]
+        for sort in (None,'recent'):
+            songs=[]
+            used=set()
+            for row in apple_artist_lookup(aid,country,sort):
+                if not isinstance(row,dict) or row.get('kind') != 'song':continue
+                candidate_aid=str(row.get('artistId') or '')
+                # IDs are authoritative. Only fall back to exact names when absent.
+                if candidate_aid and candidate_aid != aid:continue
+                if not candidate_aid and artwork_key(row.get('artistName')) != artwork_key(artist['artist']):continue
+                item=normalize_apple_record(row,country)
+                if not item or item['sourceId'] in used:continue
+                used.add(item['sourceId'])
+                songs.append(item)
+                if len(songs)>=SEARCH_RESULT_LIMIT:break
+            buckets.append(songs)
+        results=[]
+        seen=set()
+        for bucket in buckets:
+            for item in bucket:
+                if item['sourceId'] in seen:continue
+                seen.add(item['sourceId'])
+                item['searchRank']=len(results)
+                results.append(item)
+        return results
+    if artist.get('sourcePlatform') == 'lastfm':
+        # Last.fm's artist.getTopTracks is scoped to the selected artist.
+        result=lastfm_api('artist.getTopTracks',artist=artist['artist'],limit=SEARCH_RESULT_LIMIT,autocorrect=0)
+        data=(result.get('toptracks') or {}).get('track') or []
+        if isinstance(data,dict):data=[data]
+        if not isinstance(data,list):data=[]
+        tracks=[]
+        seen=set()
+        for row in data:
+            if not isinstance(row,dict):continue
+            name=row.get('name')
+            owner=row.get('artist') or artist['artist']
+            owner=owner.get('name') or owner.get('#text') or '' if isinstance(owner,dict) else owner
+            link=row.get('url') or ''
+            if not (isinstance(name,str) and name.strip() and isinstance(owner,str)
+                    and artwork_key(owner)==artwork_key(artist['artist'])
+                    and isinstance(link,str)):
+                continue
+            link=link.replace('http://','https://',1)
+            if not valid_lastfm_url(link):continue
+            key=artwork_key(name)
+            if key in seen:continue
+            seen.add(key)
+            source_id=str(row.get('mbid') or '').strip() or ('url-' + hashlib.sha256(link.encode()).hexdigest()[:32])
+            tracks.append({'itemType':'track','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+                'sourceId':source_id,'title':name[:120],'artist':owner[:120],
+                'album':'','musicUrl':link[:500],'artworkUrl':'','durationMs':None,'isrc':'',
+                'searchRank':len(tracks)})
+            if len(tracks)>=SEARCH_RESULT_LIMIT:break
+        return tracks
+    raise APIError('이 검색 엔진에서는 아티스트 곡 조회를 지원하지 않아.',422)
+
+
 def apple_dedupe_key(record):
     # Cross-country results often use different store IDs for the same release.
     # Keep albums distinct: studio, remaster, compilation versions are not equal.
@@ -1228,7 +1391,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         route = parsed.path
         if method == 'GET' and route == '/health':
-            return self.send_json({'ok': True})
+            with db() as conn:
+                conn.execute('SELECT 1').fetchone()
+            return self.send_json({'ok': True, 'storage': 'postgresql' if DATABASE_URL else 'sqlite'})
         static = {'/': ('index.html', 'text/html; charset=utf-8'),
                   '/index.html': ('index.html', 'text/html; charset=utf-8'),
                   '/style.css': ('style.css', 'text/css; charset=utf-8'),
@@ -1317,6 +1482,18 @@ class Handler(BaseHTTPRequestHandler):
                 'selectionToken': sign_selection(selection, user['id'])
             })
 
+        if method == 'POST' and route == '/api/catalog/artist-tracks':
+            selection = verify_selection(self.body().get('selectionToken'), user['id'])
+            if selection.get('itemType') != 'artist':
+                raise APIError('아티스트 검색에서 프로필을 선택해 줘.',422)
+            search_rate_limit(user['id'])
+            tracks = artist_tracks(selection)
+            return self.send_json({'artistInfo':{
+                'title':selection['title'],'genre':selection.get('genre',''),
+                'musicUrl':selection.get('musicUrl',''), 'trackCount':len(tracks),
+                'sourceCatalog':selection.get('sourceCatalog','')},
+                'results':[{**song,'selectionToken':sign_selection(song,user['id'])} for song in tracks]})
+
         if method == 'POST' and route == '/api/catalog/album-tracks':
             selection = verify_selection(self.body().get('selectionToken'), user['id'])
             if selection.get('itemType') != 'album':
@@ -1328,7 +1505,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if method == 'POST' and route == '/api/catalog/track-album':
             selection = verify_selection(self.body().get('selectionToken'), user['id'])
-            if selection.get('itemType') == 'album':
+            if selection.get('itemType') in ('album','artist'):
                 raise APIError('먼저 곡 검색 결과를 선택해 줘.', 422)
             search_rate_limit(user['id'])
             album_info, tracks = album_for_search_track(selection)
@@ -1355,7 +1532,9 @@ class Handler(BaseHTTPRequestHandler):
             if cached and cached[0] > time.time():
                 tracks = cached[1]
             else:
-                if search_mode == 'album':
+                if search_mode == 'artist':
+                    tracks = search_artists(platform, query)
+                elif search_mode == 'album':
                     tracks = search_albums(platform, query)
                 elif platform == 'lastfm':
                     tracks = search_catalog(platform, query, search_mode)
@@ -1433,8 +1612,8 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'POST' and action == 'songs' and song_id is None:
                 data = self.body()
                 selection = verify_selection(data.get('selectionToken'), user['id'])
-                if selection.get('itemType') == 'album':
-                    raise APIError('앨범 전체가 아니라 수록곡을 선택해 줘.',422)
+                if selection.get('itemType') in ('album','artist'):
+                    raise APIError('프로필이나 앨범 전체가 아니라 곡을 선택해 줘.',422)
                 title, artist = selection['title'][:120], selection['artist'][:120]
                 url = selection['musicUrl'][:500]
                 if selection['sourcePlatform'] == 'lastfm' and not selection.get('artworkUrl'):
@@ -1511,5 +1690,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     init_db()
-    print(f'TRACKROOM 실행 중 → http://localhost:{PORT}', flush=True)
+    print(f'TRACKROOM 실행 중 → http://localhost:{PORT} (영구 저장소: {"PostgreSQL" if DATABASE_URL else "로컬 SQLite"})', flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

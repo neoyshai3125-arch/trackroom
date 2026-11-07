@@ -4,7 +4,9 @@ let refreshTimer = null;
 let toastTimer = null;
 let selectedTrack = null;
 let catalogResults = [];
-let albumSearchResults = null;
+let catalogHistory = [];
+let catalogView = 'search'; // search, artist-profiles, artist-tracks, album-tracks
+let catalogViewInfo = null;
 let searchCounter = 0;
 let bubbleSelectedId = null;
 let bubbleLastRender = '';
@@ -564,17 +566,19 @@ async function resolveSearchCovers(seq) {
 // The artwork is a button; the adjacent title/details button still selects
 // a track for recommendation. Album-search results open the album either way.
 function renderCatalogResults() {
-  const browsingAlbum = Boolean(albumSearchResults);
+  const isAlbumView = catalogView === 'album-tracks';
+  const isArtistProfiles = catalogView === 'artist-profiles';
   const latest = $('catalogResultSort').value === 'recent';
+  $('catalogSortRow').classList.toggle('hidden', isArtistProfiles || isAlbumView);
   const entries = catalogResults.map((song,index) => ({song,index}));
-  if (browsingAlbum) {
+  if (isAlbumView) {
     entries.sort((a,b) => {
       const aNum = Number(a.song.trackNumber || 0), bNum = Number(b.song.trackNumber || 0);
       return (aNum && bNum ? aNum-bNum : 0) || a.index-b.index;
     });
   } else {
     entries.sort((a,b) => {
-      if (latest) {
+      if (latest && !isArtistProfiles) {
         const dateA = Date.parse(a.song.releaseDate || '') || 0;
         const dateB = Date.parse(b.song.releaseDate || '') || 0;
         if (dateB !== dateA) return dateB - dateA;
@@ -585,15 +589,19 @@ function renderCatalogResults() {
     });
   }
   $('catalogResults').innerHTML = entries.map(({song,index:i}) => {
+    const label = escaped(song.title);
+    if (song.itemType === 'artist') {
+      const monogram = escaped(String(song.title || '♪').trim().slice(0,2).toUpperCase());
+      const descriptor = song.genre ? escaped(song.genre) : escaped(catalogLabel(song.sourceCatalog));
+      return `<div class="catalog-result catalog-artist-result" data-track-index="${i}" role="listitem"><button class="catalog-artist-main" type="button" data-index="${i}" data-catalog-action="artist" aria-label="${label} 아티스트 프로필과 곡 보기"><span class="catalog-artist-avatar" aria-hidden="true">${monogram}</span><span class="catalog-result-info"><strong>${label}</strong><span>아티스트 프로필</span><small>${descriptor}</small></span><span class="catalog-choose">프로필 ↗</span></button></div>`;
+    }
     const isAlbum = song.itemType === 'album';
     const art = song.artworkUrl
       ? `<img src="${escaped(highResArtworkUrl(song.artworkUrl))}" data-original-src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="if(!this.dataset.retriedOriginal && this.src!==this.dataset.originalSrc){this.dataset.retriedOriginal='1';this.src=this.dataset.originalSrc;}else{this.parentElement.textContent='♫'}" />`
       : '<span class="no-art">♫</span>';
-    const label = escaped(song.title);
     const details = `<span class="catalog-result-info"><strong>${label}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 전체 수록곡' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span>`;
     const artLabel = escaped(isAlbum ? `${song.title} 앨범 수록곡 보기` : `${song.title}의 앨범 수록곡 보기`);
-    // While viewing an album, the cover is decorative: title selects the track.
-    const cover = browsingAlbum
+    const cover = isAlbumView
       ? `<span class="catalog-art">${art}</span>`
       : `<button class="catalog-art catalog-art-button" type="button" data-index="${i}" data-catalog-action="album" title="앨범 전체 보기" aria-label="${artLabel}">${art}<span class="album-art-hint" aria-hidden="true">↗</span></button>`;
     const action = isAlbum ? 'album' : 'select';
@@ -602,10 +610,13 @@ function renderCatalogResults() {
   }).join('');
 }
 function clearAlbumNavigation() {
-  albumSearchResults = null;
+  catalogHistory = [];
+  catalogView = 'search';
+  catalogViewInfo = null;
   $('albumBack').classList.add('hidden');
   $('catalogAlbumHeader').classList.add('hidden');
   $('catalogAlbumHeader').innerHTML = '';
+  $('catalogSortRow').classList.remove('hidden');
 }
 function renderAlbumInfo(album) {
   const art = album.artworkUrl
@@ -614,11 +625,60 @@ function renderAlbumInfo(album) {
   $('catalogAlbumHeader').innerHTML = `<div class="catalog-album-cover">${art}</div><div class="catalog-album-info"><div class="catalog-album-eyebrow">ALBUM · 전체 수록곡</div><strong>${escaped(album.title)}</strong><span>${escaped(album.artist)}</span><small>${Number(album.trackCount)||catalogResults.length}곡 · 곡 제목을 누르면 추천할 수 있어.</small></div>`;
   $('catalogAlbumHeader').classList.remove('hidden');
 }
+function renderArtistInfo(artist) {
+  const monogram = escaped(String(artist.title||'♪').trim().slice(0,2).toUpperCase());
+  const genre = artist.genre ? `<span>${escaped(artist.genre)}</span>` : '';
+  const external = artist.musicUrl ? `<a href="${escaped(artist.musicUrl)}" target="_blank" rel="noopener noreferrer">아티스트 공식 카탈로그 ↗</a>` : '';
+  $('catalogAlbumHeader').innerHTML = `<div class="catalog-album-cover catalog-artist-header-avatar" aria-hidden="true">${monogram}</div><div class="catalog-album-info"><div class="catalog-album-eyebrow">ARTIST · 아티스트 프로필</div><strong>${escaped(artist.title)}</strong>${genre}<small>카탈로그에서 확인된 ${Number(artist.trackCount)||catalogResults.length}곡 · 곡을 선택해 추천할 수 있어.</small>${external}</div>`;
+  $('catalogAlbumHeader').classList.remove('hidden');
+}
+function snapshotCatalog() {
+  return { results:[...catalogResults], status:$('searchStatus').textContent,
+    scroll:$('catalogResults').scrollTop, view:catalogView,
+    info:catalogViewInfo ? {...catalogViewInfo} : null };
+}
+function enterCatalogView(view, results, info, status) {
+  catalogHistory.push(snapshotCatalog());
+  clearSelected();
+  catalogView = view;
+  catalogViewInfo = info;
+  catalogResults = results;
+  $('searchStatus').textContent = status;
+  $('albumBack').textContent = view === 'artist-tracks'
+    ? '← 아티스트 검색 결과로 돌아가기'
+    : '← 이전 결과로 돌아가기';
+  $('albumBack').classList.remove('hidden');
+  if (view === 'artist-tracks') renderArtistInfo(info);
+  else if (view === 'album-tracks') renderAlbumInfo(info);
+  renderCatalogResults();
+  $('catalogResults').scrollTop = 0;
+}
+async function openArtistFromResult(artist, trigger) {
+  const seq = ++searchCounter;
+  const originalStatus = $('searchStatus').textContent;
+  $('searchStatus').textContent = `「${artist.title}」 아티스트의 곡을 불러오는 중…`;
+  trigger.disabled = true;
+  try {
+    const result = await api('/api/catalog/artist-tracks', {
+      method:'POST', body:JSON.stringify({selectionToken:artist.selectionToken})
+    });
+    if (seq !== searchCounter) return;
+    const info = result.artistInfo || {title:artist.title,genre:artist.genre,musicUrl:artist.musicUrl,
+      trackCount:result.results?.length||0};
+    $('searchStatus').textContent = originalStatus;
+    enterCatalogView('artist-tracks',result.results||[],info,
+      `「${info.title}」 아티스트 · ${result.results?.length||0}곡 · 원하는 곡을 선택해 줘.`);
+    if (artist.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
+  } catch(error) {
+    if (seq !== searchCounter) return;
+    $('searchStatus').textContent = error.message;
+    toast(error.message,true);
+    trigger.disabled = false;
+  }
+}
 async function openAlbumFromResult(song, trigger) {
   const seq = ++searchCounter;
-  const previous = [...catalogResults];
-  const previousStatus = $('searchStatus').textContent;
-  const previousScroll = $('catalogResults').scrollTop;
+  const existingStatus = $('searchStatus').textContent;
   $('searchStatus').textContent = `「${song.album || song.title}」의 수록곡을 불러오는 중…`;
   trigger.disabled = true;
   try {
@@ -628,17 +688,12 @@ async function openAlbumFromResult(song, trigger) {
     });
     if (seq !== searchCounter) return;
     if (!result.results?.length) throw new Error('이 앨범의 수록곡을 찾지 못했어.');
-    albumSearchResults = {results: previous, status: previousStatus, scroll: previousScroll};
-    clearSelected();
-    catalogResults = result.results;
+    // Keep the original search status in the navigation history.
+    $('searchStatus').textContent = existingStatus;
     const albumInfo = result.albumInfo || {title:song.album || song.title,artist:song.artist,
-      artworkUrl:song.artworkUrl, trackCount:catalogResults.length};
-    $('albumBack').textContent = '← 검색 결과로 돌아가기';
-    $('albumBack').classList.remove('hidden');
-    $('searchStatus').textContent = `「${albumInfo.title}」 · ${catalogResults.length}곡 · 추천할 곡을 선택해 줘.`;
-    renderAlbumInfo(albumInfo);
-    renderCatalogResults();
-    $('catalogResults').scrollTop = 0;
+      artworkUrl:song.artworkUrl, trackCount:result.results.length};
+    enterCatalogView('album-tracks',result.results,albumInfo,
+      `「${albumInfo.title}」 · ${result.results.length}곡 · 추천할 곡을 선택해 줘.`);
     if (song.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
   } catch(error) {
     if (seq !== searchCounter) return;
@@ -646,6 +701,26 @@ async function openAlbumFromResult(song, trigger) {
     toast(error.message,true);
     trigger.disabled = false;
   }
+}
+function backToAlbumResults() {
+  if (!catalogHistory.length) return;
+  ++searchCounter;
+  clearSelected();
+  const previous = catalogHistory.pop();
+  catalogResults = previous.results;
+  catalogView = previous.view;
+  catalogViewInfo = previous.info;
+  $('searchStatus').textContent = previous.status;
+  if (catalogView === 'artist-tracks') renderArtistInfo(catalogViewInfo);
+  else if (catalogView === 'album-tracks') renderAlbumInfo(catalogViewInfo);
+  else {
+    $('catalogAlbumHeader').classList.add('hidden');
+    $('catalogAlbumHeader').innerHTML = '';
+  }
+  $('albumBack').classList.toggle('hidden', !catalogHistory.length);
+  if (catalogHistory.length) $('albumBack').textContent = '← 이전 결과로 돌아가기';
+  renderCatalogResults();
+  $('catalogResults').scrollTop = previous.scroll;
 }
 async function searchSongs(event) {
   event.preventDefault();
@@ -665,11 +740,12 @@ async function searchSongs(event) {
     const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind})}`);
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
+    catalogView = kind === 'artist' ? 'artist-profiles' : 'search';
     $('searchStatus').textContent = catalogResults.length
-      ? `${catalogResults.length}${kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 인기순(검색 순위 기준)·최신순(발매일 기준)으로 정렬할 수 있어.'}`
+      ? `${catalogResults.length}${kind === 'artist' ? '개 아티스트 프로필 발견 · 프로필을 누르면 해당 아티스트의 곡을 볼 수 있어.' : kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 인기순(검색 순위 기준)·최신순(발매일 기준)으로 정렬할 수 있어.'}`
       : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
     renderCatalogResults();
-    if (platform === 'lastfm' && kind !== 'album') void resolveSearchCovers(seq);
+    if (platform === 'lastfm' && kind === 'track') void resolveSearchCovers(seq);
   } catch (error) {
     if (seq !== searchCounter) return;
     $('searchStatus').textContent = error.message;
@@ -683,25 +759,18 @@ async function selectSearchResult(event) {
   if (!trigger) return;
   const song = catalogResults[Number(trigger.dataset.index)];
   if (!song?.selectionToken) return;
+  if (trigger.dataset.catalogAction === 'artist' || song.itemType === 'artist') {
+    await openArtistFromResult(song, trigger);
+    return;
+  }
   if (trigger.dataset.catalogAction === 'album' || song.itemType === 'album') {
-    if (!albumSearchResults) await openAlbumFromResult(song, trigger);
+    if (catalogView !== 'album-tracks') await openAlbumFromResult(song, trigger);
     return;
   }
   selectedTrack = song;
   renderSelected(song);
   [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el =>
     el.classList.toggle('is-selected', Number(el.dataset.trackIndex) === Number(trigger.dataset.index)));
-}
-function backToAlbumResults() {
-  if (!albumSearchResults) return;
-  ++searchCounter;
-  clearSelected();
-  const previous = albumSearchResults;
-  catalogResults = previous.results;
-  clearAlbumNavigation();
-  renderCatalogResults();
-  $('searchStatus').textContent = previous.status;
-  $('catalogResults').scrollTop = previous.scroll;
 }
 async function addSong(event) {
   event.preventDefault();

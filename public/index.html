@@ -102,14 +102,14 @@
             <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
             <div id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</div>
             <label class="field-label" for="catalogSearchMode">검색 기준</label>
-            <select id="catalogSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트로 검색</option><option value="album">앨범명으로 검색 → 수록곡 선택</option></select>
+            <select id="catalogSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트 검색 → 프로필 → 곡 선택</option><option value="album">앨범명으로 검색 → 수록곡 선택</option></select>
             <label class="field-label" for="songQuery">음악 검색 <span class="required">*</span></label>
             <div class="catalog-search-row">
               <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목 또는 아티스트" autocomplete="off" required />
               <button class="btn btn-outline catalog-search-button" type="submit">검색</button>
             </div>
           </form>
-          <div class="catalog-sort-row">
+          <div class="catalog-sort-row" id="catalogSortRow">
             <label for="catalogResultSort">검색 결과 정렬</label>
             <select id="catalogResultSort" aria-label="검색 결과 정렬">
               <option value="popular">인기순 · 검색 순위 기준</option>
@@ -119,7 +119,7 @@
           <div id="searchStatus" class="search-status" aria-live="polite">최대 50개 검색 결과에서 곡을 선택할 수 있어.</div>
           <button type="button" id="albumBack" class="btn btn-outline album-back hidden">← 검색 결과로 돌아가기</button>
           <div id="catalogAlbumHeader" class="catalog-album-header hidden" aria-label="선택한 앨범 정보"></div>
-          <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원"></div>
+          <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원 또는 아티스트"></div>
           <form id="addSongForm">
             <div id="selectedTrack" class="selected-track hidden"></div>
             <div id="songFormExtra" class="hidden">
