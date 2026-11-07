@@ -305,8 +305,78 @@ def spotify_access_token():
         return token
 
 
-def search_catalog(platform, query):
+def search_catalog(platform, query, search_mode='track'):
     """Search the requested provider; never fall back silently to another catalog."""
+    if platform == 'lastfm':
+        api_key = os.environ.get('LASTFM_API_KEY', '').strip()
+        if not api_key:
+            raise APIError('Last.fm API 키가 설정되지 않았어. 관리자에게 LASTFM_API_KEY 설정을 요청해 줘.', 503)
+        def call_lastfm(method, **arguments):
+            params = {'method': method, 'api_key': api_key, 'format': 'json', **arguments}
+            url = 'https://ws.audioscrobbler.com/2.0/?' + urllib.parse.urlencode(params)
+            obj = request_json(url, headers={'User-Agent': 'TRACKROOM/0.4 (https://trackroom.onrender.com)'})
+            if obj.get('error'):
+                code = obj.get('error')
+                if code == 29:
+                    raise APIError('Last.fm 검색 요청이 많아. 잠시 후 다시 검색해 줘.', 429)
+                if code in (10, 26):
+                    raise APIError('Last.fm API 키가 올바르지 않거나 비활성화됐어.', 503)
+                raise APIError('Last.fm 검색 결과를 가져오지 못했어.', 502)
+            return obj
+        def as_list(value):
+            return value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        def make_result(t):
+            title = t.get('name', '')
+            artist_value = t.get('artist', '')
+            artist = artist_value.get('name', '') if isinstance(artist_value, dict) else artist_value
+            raw_url = t.get('url', '')
+            if not isinstance(title, str) or not isinstance(artist, str) or not isinstance(raw_url, str):
+                return None
+            music_url = raw_url.replace('http://', 'https://', 1)
+            parsed = urlparse(music_url)
+            if parsed.scheme != 'https' or parsed.hostname not in ('www.last.fm', 'last.fm') or not parsed.path.startswith('/music/'):
+                return None
+            if not title.strip() or not artist.strip():
+                return None
+            # Last.fm often leaves MBIDs empty; the canonical Last.fm link is a stable fallback ID.
+            mbid = str(t.get('mbid') or '').strip()
+            source_id = mbid or 'url-' + hashlib.sha256(music_url.encode('utf-8')).hexdigest()[:32]
+            return {'sourcePlatform': 'lastfm', 'sourceCatalog': 'lastfm',
+                    'sourceId': source_id, 'title': title.strip()[:120],
+                    'artist': artist.strip()[:120], 'album': '',
+                    'musicUrl': music_url[:500], 'artworkUrl': '',
+                    'durationMs': None, 'isrc': ''}
+        def unpack(obj, method):
+            if method == 'track.search':
+                return as_list((obj.get('results') or {}).get('trackmatches', {}).get('track'))
+            return as_list((obj.get('toptracks') or {}).get('track'))
+        # The UI offers explicit song/artist search so searches for 'IU' return IU's tracks.
+        if search_mode == 'artist':
+            items = unpack(call_lastfm('artist.getTopTracks', artist=query, autocorrect=1, limit=15), 'artist.getTopTracks')
+        else:
+            items = unpack(call_lastfm('track.search', track=query, limit=20), 'track.search')
+        if not items and search_mode == 'track' and ' ' in query:
+            # Handle common searches like '아이유 밤편지' without requiring an exact song title.
+            tokens = query.split()
+            for split_at in range(1, min(len(tokens), 4)):
+                obj = call_lastfm('track.search', artist=' '.join(tokens[:split_at]),
+                                  track=' '.join(tokens[split_at:]), limit=15)
+                items = unpack(obj, 'track.search')
+                if items:
+                    break
+        results, seen = [], set()
+        for item in items:
+            result = make_result(item)
+            if not result:
+                continue
+            key = (result['title'].casefold(), result['artist'].casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(result)
+            if len(results) >= 15:
+                break
+        return results
     if platform == 'spotify':
         token = spotify_access_token()
         url = 'https://api.spotify.com/v1/search?' + urllib.parse.urlencode({
@@ -348,12 +418,22 @@ def search_catalog(platform, query):
                     'durationMs':attr.get('durationInMillis') or None,
                     'isrc':attr.get('isrc', '')})
             return result
-        # Public iTunes Store metadata is not equivalent to Apple Music streaming availability.
-        url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
-            'term': query, 'media': 'music', 'entity': 'song', 'country': 'KR', 'limit': 15})
-        obj = request_json(url)
+        # South Korea has Apple Music streaming, but not iTunes Store music purchases.
+        # The public iTunes Search API searches the *store* catalog, not Apple Music.
+        # Query supported music storefronts (US, then JP) instead of KR, which can
+        # consistently return no song matches even for well-known Korean tracks.
+        # This remains a metadata fallback, NOT Korean Apple Music availability.
+        store_results = []
+        for country in ('US', 'JP'):
+            url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
+                'term': query, 'media': 'music', 'entity': 'song',
+                'country': country, 'limit': 15})
+            obj = request_json(url)
+            store_results = obj.get('results') or []
+            if store_results:
+                break
         result = []
-        for t in obj.get('results', []):
+        for t in store_results:
             if t.get('kind') != 'song' or not t.get('trackId'):
                 continue
             link = t.get('trackViewUrl', '')
@@ -391,7 +471,7 @@ def verify_selection(token, user_id):
         raise APIError('선택한 음원 정보가 올바르지 않아.')
     if song.get('uid') != user_id or song.get('exp', 0) < time.time():
         raise APIError('음원 선택이 만료됐어. 다시 검색해 줘.')
-    if song.get('sourcePlatform') not in ('spotify', 'apple') or not song.get('sourceId'):
+    if song.get('sourcePlatform') not in ('spotify', 'apple', 'lastfm') or not song.get('sourceId'):
         raise APIError('선택한 음악 정보를 확인할 수 없어.')
     if not song.get('title') or not song.get('artist') or not song.get('musicUrl'):
         raise APIError('선택한 음악 정보를 확인할 수 없어.')
@@ -565,20 +645,23 @@ class Handler(BaseHTTPRequestHandler):
         if method == 'GET' and route == '/api/catalog/search':
             params = parse_qs(parsed.query)
             platform = params.get('platform', [''])[0]
+            search_mode = params.get('kind', ['track'])[0]
             query = params.get('q', [''])[0].strip()
             if not 2 <= len(query) <= 80:
                 raise APIError('검색어는 2~80자로 입력해 줘.')
-            if platform not in ('spotify', 'apple'):
+            if platform not in ('spotify', 'apple', 'lastfm'):
                 raise APIError('이 플랫폼에서는 아직 사이트 내 검색을 제공하지 않아.', 422)
+            if platform == 'lastfm' and search_mode not in ('track', 'artist'):
+                raise APIError('검색 유형이 올바르지 않아.', 422)
             search_rate_limit(user['id'])
             # Keep this cache short and not tied to a Spotify user session.
-            key = (platform, query.casefold())
+            key = (platform, search_mode if platform == 'lastfm' else 'track', query.casefold())
             with CACHE_LOCK:
                 cached = SEARCH_CACHE.get(key)
             if cached and cached[0] > time.time():
                 tracks = cached[1]
             else:
-                tracks = search_catalog(platform, query)
+                tracks = search_catalog(platform, query, search_mode) if platform == 'lastfm' else search_catalog(platform, query)
                 tracks = [t for t in tracks if t.get('sourceId') and t.get('title') and t.get('artist') and t.get('musicUrl')]
                 with CACHE_LOCK:
                     SEARCH_CACHE[key] = (time.time() + 120, tracks[:15])
@@ -590,7 +673,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'results': response, 'catalog':
                 response[0]['sourceCatalog'] if response else
                 ('apple_music' if platform == 'apple' and os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN') else
-                 'itunes_store' if platform == 'apple' else 'spotify')})
+                 'itunes_store' if platform == 'apple' else 'lastfm' if platform == 'lastfm' else 'spotify')})
         if method == 'POST' and route == '/api/rooms':
             name = required_string(self.body(), 'name', 40)
             with db() as conn:

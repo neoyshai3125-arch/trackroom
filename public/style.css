@@ -40,3 +40,8 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 @media(max-width:400px){.catalog-result{gap:7px}.catalog-art{width:50px;height:50px}.catalog-choose{font-size:9px;padding:2px}.song-cover{width:58px;height:58px}}
 
 .catalog-fallback{border:0;background:none;color:#d0f78a;padding:2px 0 7px;font-size:11px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+
+/* Last.fm track search – platform-neutral profile, single catalog */
+.catalog-provider{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 8px;padding:10px 13px;border:1px solid var(--line, #505050);border-radius:12px;background:rgba(127,127,127,.07)}
+.catalog-provider-name{font-weight:750;font-size:.95rem}
+.catalog-provider a{font-size:.75rem;text-decoration:underline;text-underline-offset:2px;color:inherit;opacity:.85}

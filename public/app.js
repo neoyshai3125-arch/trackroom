@@ -202,7 +202,7 @@ function renderSongs() {
     const owned = song.userId === state.user?.id;
     const range = song.startSeconds !== null ? `<span class="song-timerange">♫ ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – '+timeLabel(song.endSeconds) : '부터'}</span>` : '';
     const provider = song.sourceCatalog === 'itunes_store' ? 'iTunes Store' :
-      (PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
+      (song.sourceCatalog === 'lastfm' ? 'Last.fm' : PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
     const link = song.musicUrl ? `<a href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer" class="song-link">${escaped(provider)}에서 보기 ↗</a>` : '';
     const cover = song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)
       ? `<div class="song-cover"><img src="${escaped(song.artworkUrl)}" alt="" loading="lazy" /></div>`
@@ -249,7 +249,7 @@ async function joinRoom(event) {
   finally { setBusy(form,false); }
 }
 function catalogLabel(catalog) {
-  return ({ spotify:'Spotify', apple_music:'Apple Music', itunes_store:'iTunes Store' })[catalog] || '음원 카탈로그';
+  return ({ spotify:'Spotify', apple_music:'Apple Music', itunes_store:'iTunes Store', lastfm:'Last.fm' })[catalog] || '음원 카탈로그';
 }
 function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return '';
@@ -257,26 +257,10 @@ function formatDuration(ms) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 function catalogHint() {
-  const p = $('searchPlatform').value;
-  const hints = {
-    spotify: 'Spotify API 키를 서버에 설정해야 검색할 수 있어. 개발 모드는 Premium 및 사용자 수 제한이 있어.',
-    apple: 'Apple Music 토큰이 없으면 iTunes Store 공개 카탈로그를 검색해. Apple Music 재생 가능 여부까지 보장하지는 않아.',
-    melon: '멜론의 공식 일반 개발자용 곡 검색 API는 연동하지 않았어. Apple / iTunes 검색을 대신 선택할 수 있어.',
-    genie: '지니뮤직의 공식 곡 검색 연동은 아직 지원하지 않아.',
-    flo: 'FLO의 공식 곡 검색 연동은 아직 지원하지 않아.',
-    bugs: '벅스의 공식 곡 검색 연동은 아직 지원하지 않아.',
-    youtube: 'YouTube Music의 공식 곡 검색 연동은 아직 지원하지 않아.'
-  };
-  $('catalogHint').textContent = hints[p] || '검색 플랫폼을 선택해 줘.';
-  $('catalogHint').classList.toggle('catalog-warning', !['spotify','apple'].includes(p));
-  $('appleFallback').classList.toggle('hidden', ['spotify','apple'].includes(p));
-  $('catalogSearchForm').querySelector('[type="submit"]').disabled = !['spotify','apple'].includes(p);
+  $('catalogHint').textContent = 'Last.fm에서 노래 제목 또는 아티스트를 검색해 줘. 앨범 커버는 저작권 확인 전까지 표시하지 않아.';
+  $('catalogSearchForm').querySelector('[type="submit"]').disabled = false;
 }
-function preferSearchPlatform() {
-  const p = state.user?.platform;
-  if (p && [...$('searchPlatform').options].some(o => o.value === p)) $('searchPlatform').value = p;
-  catalogHint();
-}
+function preferSearchPlatform() { catalogHint(); }
 function clearSelected() {
   selectedTrack = null;
   $('selectedTrack').innerHTML = '';
@@ -295,25 +279,25 @@ function renderSelected(track) {
 }
 async function searchSongs(event) {
   event.preventDefault();
-  const platform = $('searchPlatform').value;
+  const platform = 'lastfm';
+  const kind = $('lastfmSearchMode').value;
   const q = $('songQuery').value.trim();
   const seq = ++searchCounter;
   clearSelected();
   catalogResults = [];
   $('catalogResults').innerHTML = '';
   if (q.length < 2) return toast('검색어를 2글자 이상 입력해 줘.', true);
-  if (!['spotify','apple'].includes(platform)) return toast('이 플랫폼은 아직 공식 검색을 지원하지 않아.',true);
   const button = $('catalogSearchForm').querySelector('button[type="submit"]');
   button.disabled = true;
   $('searchStatus').textContent = '음원을 검색하고 있어…';
   try {
-    const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q})}`);
+    const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind})}`);
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
-    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : '검색된 곡이 없어. 다른 제목이나 아티스트로 검색해 봐.';
+    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : 'Last.fm에서 결과가 없어. 곡 제목이나 아티스트 이름을 바꿔 검색해 봐.';
     $('catalogResults').innerHTML = catalogResults.map((song, i) => {
       const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" />` : '<span class="no-art">♫</span>';
-      return `<button type="button" class="catalog-result" data-index="${i}" role="listitem"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${escaped(catalogLabel(song.sourceCatalog))} · ${escaped(song.album)} ${formatDuration(song.durationMs)}</small></span><span class="catalog-choose">선택 ↗</span></button>`;
+      return `<button type="button" class="catalog-result" data-index="${i}" role="listitem"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${escaped(catalogLabel(song.sourceCatalog))}${song.album ? ' · '+escaped(song.album) : ''}${song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">선택 ↗</span></button>`;
     }).join('');
   } catch (error) {
     if (seq !== searchCounter) return;
@@ -412,18 +396,7 @@ async function init() {
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
   $('catalogSearchForm').addEventListener('submit', searchSongs);
-  $('appleFallback').addEventListener('click', () => {
-    $('searchPlatform').value = 'apple';
-    $('searchPlatform').dispatchEvent(new Event('change'));
-    $('songQuery').focus();
-  });
-  $('catalogResults').addEventListener('click', selectSearchResult);
-  $('searchPlatform').addEventListener('change', () => {
-    ++searchCounter;
-    clearSelected(); catalogResults = []; $('catalogResults').innerHTML = '';
-    $('searchStatus').textContent = '검색 플랫폼을 선택했어. 음원을 검색해 줘.';
-    catalogHint();
-  });
+  $('lastfmSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
   $('songQuery').addEventListener('input', () => {
     ++searchCounter;
     clearSelected(); catalogResults = []; $('catalogResults').innerHTML = '';
