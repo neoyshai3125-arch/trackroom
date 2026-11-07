@@ -17,7 +17,6 @@ let bubbleDrag = null;
 let bubblePinch = null;
 let suppressBubbleClick = false;
 let addPanelOpen = false;
-let roomMenuOpen = false;
 
 function toast(message, error = false) {
   const el = $('toast');
@@ -130,8 +129,6 @@ function setBusy(form, busy) {
   if (form.id === 'addSongForm') $('submitSong').disabled = busy || !selectedTrack;
 }
 function showLanding() {
-  closeRoomMenu(false);
-  document.body.classList.remove('room-active');
   state.roomCode = null;
   state.room = null;
   clearInterval(refreshTimer);
@@ -152,9 +149,7 @@ function goToRoom(code) {
     bubbleLastRender = '';
     bubbleSelectedId = null;
   }
-  closeRoomMenu(false);
   state.roomCode = code;
-  document.body.classList.add('room-active');
   $('landing').classList.add('hidden');
   $('landingFooter').classList.add('hidden');
   $('roomView').classList.remove('hidden');
@@ -324,27 +319,7 @@ function closeBubbleDetail() {
   $('bubbleDetail').classList.add('hidden');
   $('bubbleStage').querySelectorAll('.bubble-active').forEach(el => el.classList.remove('bubble-active'));
 }
-function openRoomMenu() {
-  if (!state.roomCode || roomMenuOpen) return;
-  closeAddPanel();
-  roomMenuOpen = true;
-  $('roomMenu').classList.remove('hidden');
-  $('roomMenuBackdrop').classList.remove('hidden');
-  $('roomMenuToggle').setAttribute('aria-expanded', 'true');
-  $('roomMenuToggle').setAttribute('aria-label', '메뉴 닫기');
-  $('roomMenuClose').focus();
-}
-function closeRoomMenu(restoreFocus = true) {
-  const wasOpen = roomMenuOpen;
-  roomMenuOpen = false;
-  $('roomMenu').classList.add('hidden');
-  $('roomMenuBackdrop').classList.add('hidden');
-  $('roomMenuToggle').setAttribute('aria-expanded', 'false');
-  $('roomMenuToggle').setAttribute('aria-label', '메뉴 열기');
-  if (restoreFocus && wasOpen && document.body.classList.contains('room-active')) $('roomMenuToggle').focus();
-}
 function openAddPanel() {
-  closeRoomMenu(false);
   addPanelOpen = true;
   $('addPanel').classList.add('panel-open');
   $('addPanelBackdrop').classList.remove('hidden');
@@ -927,15 +902,7 @@ async function init() {
   $('logoutButton').addEventListener('click',logout);
   $('authOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideAuth(); });
   $('profileOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideProfile(); });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { hideAuth(); hideProfile(); closeBubbleDetail(); closeAddPanel(); closeRoomMenu(); }
-    if (e.key === 'Tab' && roomMenuOpen && !$('roomMenu').classList.contains('hidden')) {
-      const focusable = [...$('roomMenu').querySelectorAll('button:not(:disabled)')];
-      const first = focusable[0], last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-  });
+  document.addEventListener('keydown', e => { if(e.key==='Escape') { hideAuth(); hideProfile(); closeBubbleDetail(); closeAddPanel(); } });
   $('createForm').addEventListener('submit',createRoom);
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
@@ -965,12 +932,7 @@ async function init() {
   initBubbleCanvas();
   $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();clearAlbumNavigation();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
   $('albumBack').addEventListener('click', backToAlbumResults);
-  $('roomMenuToggle').addEventListener('click', () => roomMenuOpen ? closeRoomMenu() : openRoomMenu());
-  $('roomMenuClose').addEventListener('click', () => closeRoomMenu());
-  $('roomMenuBackdrop').addEventListener('click', () => closeRoomMenu());
-  $('shareBtn').addEventListener('click', () => { closeRoomMenu(false); copyShare(); });
-  $('roomMenuProfile').addEventListener('click', () => { closeRoomMenu(false); showProfile(); });
-  $('roomMenuHome').addEventListener('click', showLanding);
+  $('shareBtn').addEventListener('click',copyShare);
   renderAccount();
   catalogHint();
   try {
