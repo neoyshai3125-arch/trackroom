@@ -62,20 +62,41 @@
         <button type="button" class="btn btn-primary share-btn" id="shareBtn"><span class="copy-symbol">⧉</span> 초대 링크 복사</button>
       </div>
       <div class="room-layout">
-        <section class="song-section">
-          <div class="section-heading">
-            <div><div class="mini-heading">THE ROTATION</div><h2>우리의 추천곡 <span id="songTotal">0</span></h2></div>
-            <div class="sort-controls"><button id="sortRecent" class="sort active" type="button">최신순</button><button id="sortLikes" class="sort" type="button">인기순</button></div>
+        <section class="song-section" aria-label="추천 음악 탐색 공간">
+          <div class="section-heading canvas-heading">
+            <div><div class="mini-heading">THE DISCOVERY FIELD</div><h2>우리의 음악 공간 <span id="songTotal">0</span></h2><p class="canvas-caption">먼저 눈에 띄는 커버부터 둘러봐. 정해진 순서는 없어.</p></div>
+            <button class="btn btn-primary add-track-open" type="button" id="openAddPanel">+ 음악 추가</button>
           </div>
-          <div id="songList" class="song-list"><div class="empty-list">곡을 불러오는 중...</div></div>
+          <div id="bubbleCanvas" class="bubble-canvas" tabindex="0" role="region" aria-label="음악 버블 캔버스. 드래그하여 이동, 마우스 휠 또는 확대 축소 버튼으로 탐색, 버블을 눌러 상세 보기">
+            <div class="canvas-backdrop" aria-hidden="true"></div>
+            <div id="bubbleStage" class="bubble-stage" aria-live="off"></div>
+            <div class="canvas-tip" aria-hidden="true"><span class="tip-spark">✳</span> DRAG TO EXPLORE <span class="tip-separator">·</span> PINCH TO ZOOM</div>
+            <div class="canvas-controls" aria-label="캔버스 조작">
+              <button class="canvas-action" type="button" id="bubbleZoomIn" title="확대" aria-label="확대">+</button>
+              <button class="canvas-action" type="button" id="bubbleZoomOut" title="축소" aria-label="축소">−</button>
+              <span class="zoom-value" id="bubbleZoomLabel">100%</span>
+              <button class="canvas-action canvas-reset" type="button" id="bubbleReset" title="중앙으로 이동" aria-label="중앙으로 이동">⌖</button>
+              <button class="canvas-action canvas-shuffle" type="button" id="bubbleDiscover" title="다른 추천곡 발견" aria-label="다른 추천곡 발견">↝</button>
+            </div>
+            <div id="bubbleDetail" class="bubble-detail hidden" role="dialog" aria-modal="false" aria-label="추천곡 상세 정보">
+              <button id="bubbleDetailClose" class="bubble-detail-close" type="button" aria-label="상세 정보 닫기">✕</button>
+              <div id="bubbleDetailBody"></div>
+            </div>
+            <div id="bubbleCanvasEmpty" class="canvas-empty hidden"><div class="canvas-empty-icon">✳</div><h3>아직 음악이 없네</h3><p>첫 노래를 등록하면 이 공간에 새로운 버블이 생겨.</p><button class="btn btn-primary" type="button" id="bubbleFirstAdd">첫 음악 추가하기 ↗</button></div>
+          </div>
+          <div class="canvas-footer"><span class="canvas-presence">✳ 이미지를 눌러 추천 이야기 보기</span><span>커버가 없는 곡은 TRACKROOM 그래픽으로 표시돼.</span></div>
         </section>
-        <aside class="add-panel">
+        <button id="addPanelBackdrop" class="add-panel-backdrop hidden" type="button" aria-label="음악 등록 창 닫기"></button>
+        <aside class="add-panel" id="addPanel" aria-label="음악 등록">
+          <button id="closeAddPanel" class="add-panel-close" type="button" aria-label="음악 등록 창 닫기">✕</button>
           <div class="panel-decor" aria-hidden="true">✳</div>
           <div class="mini-heading">DROP A TRACK</div>
           <h2>이 노래,<br/>너도 들어봐.</h2>
-          <p class="panel-intro">Last.fm에서 음악을 검색해 선택해 줘. 임의로 제목을 입력해 등록할 수는 없어.</p>
+          <p class="panel-intro">Last.fm 또는 Apple/iTunes에서 검색된 음악만 등록할 수 있어. 곡 정보에 저장된 앨범 커버를 버블에 표시해.</p>
           <form id="catalogSearchForm" class="catalog-search-form" role="search">
-            <div class="catalog-provider"><span class="catalog-provider-name">✳ Last.fm 통합 음악 검색</span><a href="https://www.last.fm" target="_blank" rel="noopener noreferrer">Powered by Last.fm ↗</a></div>
+            <div class="catalog-provider"><span class="catalog-provider-name">✳ 음악 데이터베이스 선택</span><a id="catalogSourceLink" href="https://www.last.fm" target="_blank" rel="noopener noreferrer">Powered by Last.fm ↗</a></div>
+            <label class="field-label" for="catalogPlatform">검색 데이터베이스</label>
+            <select id="catalogPlatform" class="platform-select"><option value="lastfm">Last.fm</option><option value="apple">Apple / iTunes 공개 카탈로그</option></select>
             <div id="catalogHint" class="catalog-hint" role="status">노래 제목이나 아티스트를 입력해 줘. 음원 재생·다운로드는 제공하지 않아.</div>
             <label class="field-label" for="lastfmSearchMode">검색 기준</label>
             <select id="lastfmSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트로 검색</option></select>
@@ -85,7 +106,7 @@
               <button class="btn btn-outline catalog-search-button" type="submit">검색</button>
             </div>
           </form>
-          <div id="searchStatus" class="search-status" aria-live="polite">Last.fm 검색 결과에서 곡을 선택하면 추천할 수 있어.</div>
+          <div id="searchStatus" class="search-status" aria-live="polite">검색 결과에서 곡을 선택하면 추천할 수 있어.</div>
           <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원"></div>
           <form id="addSongForm">
             <div id="selectedTrack" class="selected-track hidden"></div>

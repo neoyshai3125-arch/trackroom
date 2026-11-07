@@ -5,6 +5,15 @@ let toastTimer = null;
 let selectedTrack = null;
 let catalogResults = [];
 let searchCounter = 0;
+let bubbleSelectedId = null;
+let bubbleLastRender = '';
+let bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+let bubbleRandomIndex = 0;
+let bubblePointerState = new Map();
+let bubbleDrag = null;
+let bubblePinch = null;
+let suppressBubbleClick = false;
+let addPanelOpen = false;
 
 function toast(message, error = false) {
   const el = $('toast');
@@ -123,11 +132,20 @@ function showLanding() {
   $('landing').classList.remove('hidden');
   $('landingFooter').classList.remove('hidden');
   $('roomView').classList.add('hidden');
+  closeAddPanel();
+  closeBubbleDetail();
+  bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+  bubbleLastRender = '';
   history.replaceState({}, '', '/');
 
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goToRoom(code) {
+  if (state.roomCode !== code) {
+    bubbleCanvasCamera = { x: 0, y: 0, zoom: 1 };
+    bubbleLastRender = '';
+    bubbleSelectedId = null;
+  }
   state.roomCode = code;
   $('landing').classList.add('hidden');
   $('landingFooter').classList.add('hidden');
@@ -191,34 +209,216 @@ function artGradient(title) {
   const n = [...title].reduce((a, c) => a+c.charCodeAt(0), 0);
   return colors[n%colors.length];
 }
-function renderSongs() {
-  const list = [...state.songs];
-  if (state.sort === 'likes') list.sort((a,b)=> b.likeCount-a.likeCount || b.id-a.id);
-  if (!list.length) {
-    $('songList').innerHTML = `<div class="empty-list"><div class="empty-icon">✳</div><h3>아직 추천된 노래가 없어</h3><p>첫 번째 노래를 등록해서<br>이 방의 플레이리스트를 시작해 봐!</p></div>`;
-    return;
+// -----------------------------------------------
+// TRACKROOM v5: spatial discovery canvas
+// -----------------------------------------------
+function bubblePosition(index) {
+  if (index === 0) return { x: 0, y: 0, size: 162 };
+  // A deterministic sunflower distribution: no rank or likes-based sizing.
+  const angle = index * 2.399963229728653;
+  const radius = 192 * Math.sqrt(index);
+  const size = 134 + (index * 37 % 25);
+  return { x: Math.round(Math.cos(angle) * radius), y: Math.round(Math.sin(angle) * radius), size };
+}
+function bubbleArtwork(song) {
+  if (song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)) {
+    return `<img src="${escaped(song.artworkUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" /><span class="bubble-image-fallback" style="display:none">♫</span>`;
   }
-  $('songList').innerHTML = list.map(song => {
-    const owned = song.userId === state.user?.id;
-    const range = song.startSeconds !== null ? `<span class="song-timerange">♫ ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – '+timeLabel(song.endSeconds) : '부터'}</span>` : '';
-    const provider = song.sourceCatalog === 'itunes_store' ? 'iTunes Store' :
-      (song.sourceCatalog === 'lastfm' ? 'Last.fm' : PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
-    const link = song.musicUrl ? `<a href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer" class="song-link">${escaped(provider)}에서 보기 ↗</a>` : '';
-    const cover = song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)
-      ? `<div class="song-cover"><img src="${escaped(song.artworkUrl)}" alt="" loading="lazy" /></div>`
-      : `<div class="song-art" style="--art:${artGradient(song.title)}" aria-hidden="true"></div>`;
-    return `<article class="song-card" data-id="${song.id}">
-      <div class="song-card-top">
-        ${cover}
-        <div class="song-info"><h3>${escaped(song.title)}</h3><p>${escaped(song.artist)}</p><div class="song-by"><strong>${escaped(song.nickname)}</strong>의 추천 · ${new Date(song.createdAt).toLocaleDateString('ko-KR',{month:'short',day:'numeric'})}</div></div>
-      </div>
-      ${song.note ? `<div class="song-note">“${escaped(song.note)}”</div>` : ''}
-      <div class="song-bottom"><div class="song-extras">${link}${range}</div><div class="song-actions">
-        ${owned ? `<button class="icon-plain" data-action="delete" data-id="${song.id}" aria-label="노래 삭제">삭제</button>` : ''}
-        <button class="like ${song.liked?'liked':''}" data-action="like" data-id="${song.id}" aria-label="좋아요 ${song.likeCount}개"><span>${song.liked?'♥':'♡'}</span> ${song.likeCount}</button>
-      </div></div>
-    </article>`;
-  }).join('');
+  return '<span class="bubble-image-fallback">♫</span>';
+}
+function bubbleProvider(song) {
+  return song.sourceCatalog === 'itunes_store' ? 'iTunes Store' : song.sourceCatalog === 'lastfm' ? 'Last.fm' :
+    (PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
+}
+function applyBubbleCamera() {
+  const {x, y, zoom} = bubbleCanvasCamera;
+  $('bubbleStage').style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoom})`;
+  $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`;
+  $('bubbleCanvas').classList.toggle('zoomed-out', zoom < .8);
+  $('bubbleCanvas').classList.toggle('zoomed-in', zoom > 1.3);
+}
+function renderSongs() {
+  const songs = [...state.songs].sort((a,b)=> a.id - b.id);
+  const signature = songs.map(s => [s.id,s.title,s.artist,s.artworkUrl,s.likeCount,s.liked,s.nickname,s.note,s.startSeconds,s.endSeconds].join('|')).join('~');
+  if (signature !== bubbleLastRender) {
+    bubbleLastRender = signature;
+    $('bubbleStage').innerHTML = songs.map((song, index) => {
+      const p = bubblePosition(index);
+      const radius = p.size / 2;
+      return `<button type="button" class="music-bubble${song.id === bubbleSelectedId?' bubble-active':''}" data-song-id="${song.id}"
+        style="--bubble-x:${p.x}px;--bubble-y:${p.y}px;--bubble-size:${p.size}px;--bubble-art:${artGradient(song.title)}"
+        aria-label="${escaped(song.title)}, ${escaped(song.artist)}, ${escaped(song.nickname)}님의 추천. 상세 보기">
+          <span class="bubble-sphere">${bubbleArtwork(song)}</span>
+          <span class="bubble-name">${escaped(song.title)}</span>
+          <span class="bubble-artist">${escaped(song.artist)}</span>
+          <span class="bubble-dot" aria-hidden="true"></span>
+        </button>`;
+    }).join('');
+    if (bubbleSelectedId !== null) {
+      const selected = songs.find(song => song.id === bubbleSelectedId);
+      if (selected) renderBubbleDetail(selected); else closeBubbleDetail();
+    }
+  }
+  $('bubbleCanvasEmpty').classList.toggle('hidden', songs.length > 0);
+  $('bubbleCanvas').classList.toggle('is-empty', songs.length === 0);
+  applyBubbleCamera();
+}
+function renderBubbleDetail(song) {
+  const owned = song.userId === state.user?.id;
+  const provider = bubbleProvider(song);
+  const art = song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)
+    ? `<img src="${escaped(song.artworkUrl)}" alt="앨범 커버" loading="lazy" referrerpolicy="no-referrer"/>`
+    : '<span class="detail-record">♫</span>';
+  const range = song.startSeconds !== null && song.startSeconds !== undefined
+    ? `<div class="bubble-detail-range">♫ 추천 구간: ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – ' + timeLabel(song.endSeconds) : '부터'}</div>` : '';
+  $('bubbleDetailBody').innerHTML = `<div class="bubble-detail-art" style="--bubble-art:${artGradient(song.title)}">${art}</div>
+    <p class="bubble-detail-eyebrow">${escaped(provider)} · ${escaped(song.nickname)}님의 추천</p>
+    <h3>${escaped(song.title)}</h3><p class="bubble-detail-artist">${escaped(song.artist)}</p>
+    ${song.note ? `<p class="bubble-detail-note">“${escaped(song.note)}”</p>` : ''}
+    ${range}
+    <div class="bubble-detail-actions">
+      <button type="button" class="like bubble-like${song.liked ? ' liked':''}" data-action="like" data-id="${song.id}" aria-label="좋아요 ${song.likeCount}개">${song.liked ? '♥' : '♡'} ${song.likeCount}</button>
+      ${song.musicUrl ? `<a class="bubble-link" href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer">${escaped(provider)}에서 보기 ↗</a>` : ''}
+      ${owned ? `<button type="button" class="icon-plain bubble-delete" data-action="delete" data-id="${song.id}">삭제</button>` : ''}
+    </div>`;
+  $('bubbleDetail').classList.remove('hidden');
+}
+function openBubbleDetail(songId) {
+  const song = state.songs.find(song => song.id === songId);
+  if (!song) return;
+  bubbleSelectedId = songId;
+  $('bubbleStage').querySelectorAll('.music-bubble').forEach(el => el.classList.toggle('bubble-active', Number(el.dataset.songId)===songId));
+  renderBubbleDetail(song);
+}
+function closeBubbleDetail() {
+  bubbleSelectedId = null;
+  $('bubbleDetail').classList.add('hidden');
+  $('bubbleStage').querySelectorAll('.bubble-active').forEach(el => el.classList.remove('bubble-active'));
+}
+function openAddPanel() {
+  addPanelOpen = true;
+  $('addPanel').classList.add('panel-open');
+  $('addPanelBackdrop').classList.remove('hidden');
+  $('openAddPanel').setAttribute('aria-expanded','true');
+  $('closeAddPanel').focus();
+}
+function closeAddPanel() {
+  addPanelOpen = false;
+  $('addPanel').classList.remove('panel-open');
+  $('addPanelBackdrop').classList.add('hidden');
+  $('openAddPanel').setAttribute('aria-expanded','false');
+}
+function setBubbleZoom(newZoom, clientX, clientY) {
+  const viewport = $('bubbleCanvas');
+  const rect = viewport.getBoundingClientRect();
+  const x = (clientX ?? (rect.left+rect.width/2)) - (rect.left + rect.width/2);
+  const y = (clientY ?? (rect.top+rect.height/2)) - (rect.top + rect.height/2);
+  const previousZoom = bubbleCanvasCamera.zoom;
+  const target = Math.min(2.15, Math.max(.52, newZoom));
+  const ratio = target / previousZoom;
+  bubbleCanvasCamera.x = x - (x - bubbleCanvasCamera.x) * ratio;
+  bubbleCanvasCamera.y = y - (y - bubbleCanvasCamera.y) * ratio;
+  bubbleCanvasCamera.zoom = target;
+  applyBubbleCamera();
+}
+function panToSongIndex(index) {
+  const position = bubblePosition(index);
+  const zoom = bubbleCanvasCamera.zoom;
+  bubbleCanvasCamera.x = -position.x * zoom;
+  bubbleCanvasCamera.y = -position.y * zoom;
+  applyBubbleCamera();
+}
+function initBubbleCanvas() {
+  const viewport = $('bubbleCanvas');
+  const stage = $('bubbleStage');
+  const localPosition = (event) => {
+    const r = viewport.getBoundingClientRect();
+    return { x: event.clientX - r.left - r.width/2, y: event.clientY - r.top - r.height/2 };
+  };
+  stage.addEventListener('click', e => {
+    if (suppressBubbleClick) { suppressBubbleClick = false; return; }
+    const bubble = e.target.closest('[data-song-id]');
+    if (bubble) openBubbleDetail(Number(bubble.dataset.songId));
+  });
+  viewport.addEventListener('pointerdown', e => {
+    if (e.target.closest('.canvas-controls, .bubble-detail, .canvas-empty')) return;
+    bubblePointerState.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (bubblePointerState.size === 1) {
+      bubbleDrag = { x:e.clientX, y:e.clientY, originX:bubbleCanvasCamera.x, originY:bubbleCanvasCamera.y, moved:false };
+    } else if (bubblePointerState.size === 2) {
+      const [p1,p2] = [...bubblePointerState.values()];
+      const dx=p1.x-p2.x, dy=p1.y-p2.y;
+      bubblePinch = { distance:Math.hypot(dx,dy), zoom:bubbleCanvasCamera.zoom, center:{ x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 } };
+      bubbleDrag=null;
+    }
+    if (e.pointerType !== 'mouse') viewport.setPointerCapture(e.pointerId);
+  });
+  viewport.addEventListener('pointermove', e => {
+    if (!bubblePointerState.has(e.pointerId)) return;
+    bubblePointerState.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (bubblePointerState.size === 2 && bubblePinch) {
+      const [a,b] = [...bubblePointerState.values()];
+      const dx=a.x-b.x,dy=a.y-b.y;
+      setBubbleZoom(bubblePinch.zoom * Math.hypot(dx,dy)/bubblePinch.distance, (a.x+b.x)/2,(a.y+b.y)/2);
+      suppressBubbleClick = true;
+      return;
+    }
+    if (!bubbleDrag) return;
+    const dx=e.clientX-bubbleDrag.x,dy=e.clientY-bubbleDrag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) {
+      bubbleDrag.moved=true;
+      if (e.pointerType === 'mouse' && !viewport.hasPointerCapture(e.pointerId)) viewport.setPointerCapture(e.pointerId);
+    }
+    if (bubbleDrag.moved) {
+      bubbleCanvasCamera.x=bubbleDrag.originX+dx;
+      bubbleCanvasCamera.y=bubbleDrag.originY+dy;
+      viewport.classList.add('is-dragging');
+      applyBubbleCamera();
+    }
+  });
+  const releasePointer = e => {
+    if (bubbleDrag?.moved || bubblePinch) {
+      suppressBubbleClick=true;
+      // A synthetic click can follow pointerup; clear suppression after the event loop.
+      setTimeout(() => { suppressBubbleClick=false; }, 0);
+    }
+    bubblePointerState.delete(e.pointerId);
+    bubbleDrag=null;
+    bubblePinch=null;
+    viewport.classList.remove('is-dragging');
+    if (viewport.hasPointerCapture(e.pointerId)) viewport.releasePointerCapture(e.pointerId);
+  };
+  viewport.addEventListener('pointerup',releasePointer);
+  viewport.addEventListener('pointercancel',releasePointer);
+  viewport.addEventListener('wheel',e=>{if (e.target.closest('.bubble-detail')) return; e.preventDefault(); setBubbleZoom(bubbleCanvasCamera.zoom * (e.deltaY > 0 ? .9 : 1.1), e.clientX,e.clientY);},{passive:false});
+  viewport.addEventListener('keydown', e=> {
+    if (e.target !== viewport) return;
+    const move=65;
+    if (e.key==='ArrowLeft') bubbleCanvasCamera.x+=move;
+    else if (e.key==='ArrowRight') bubbleCanvasCamera.x-=move;
+    else if (e.key==='ArrowUp') bubbleCanvasCamera.y+=move;
+    else if (e.key==='ArrowDown') bubbleCanvasCamera.y-=move;
+    else if (e.key==='+' || e.key==='=') setBubbleZoom(bubbleCanvasCamera.zoom*1.12);
+    else if (e.key==='-') setBubbleZoom(bubbleCanvasCamera.zoom/1.12);
+    else return;
+    e.preventDefault(); applyBubbleCamera();
+  });
+  $('bubbleZoomIn').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom*1.2));
+  $('bubbleZoomOut').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom/1.2));
+  $('bubbleReset').addEventListener('click',()=>{bubbleCanvasCamera={x:0,y:0,zoom:1};applyBubbleCamera();closeBubbleDetail();});
+  $('bubbleDiscover').addEventListener('click',()=>{
+    if (state.songs.length < 2) return toast('새로운 영역을 탐색하려면 노래를 두 곡 이상 등록해 줘.');
+    bubbleRandomIndex = (bubbleRandomIndex + 1 + Math.floor(Math.random()*Math.max(1,state.songs.length-1))) % state.songs.length;
+    bubbleCanvasCamera.zoom = 1;
+    panToSongIndex(bubbleRandomIndex);
+    closeBubbleDetail();
+  });
+  $('bubbleDetailClose').addEventListener('click',closeBubbleDetail);
+  $('bubbleDetail').addEventListener('click',onSongAction);
+  $('openAddPanel').addEventListener('click',openAddPanel);
+  $('bubbleFirstAdd').addEventListener('click',openAddPanel);
+  $('closeAddPanel').addEventListener('click',closeAddPanel);
+  $('addPanelBackdrop').addEventListener('click',closeAddPanel);
 }
 async function createRoom(event) {
   event.preventDefault();
@@ -257,7 +457,11 @@ function formatDuration(ms) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 function catalogHint() {
-  $('catalogHint').textContent = 'Last.fm에서 노래 제목 또는 아티스트를 검색해 줘. 앨범 커버는 저작권 확인 전까지 표시하지 않아.';
+  const apple = $('catalogPlatform').value === 'apple';
+  $('catalogHint').textContent = apple ? 'Apple/iTunes 공개 음악 카탈로그 검색. 지역별 등록 여부는 다를 수 있어.' : 'Last.fm에서 노래 제목 또는 아티스트를 검색해 줘. 앨범 이미지가 없을 수 있어.';
+  $('catalogSourceLink').href = apple ? 'https://www.apple.com/apple-music/' : 'https://www.last.fm';
+  $('catalogSourceLink').textContent = apple ? 'Apple Music ↗' : 'Powered by Last.fm ↗';
+  $('lastfmSearchMode').disabled = apple;
   $('catalogSearchForm').querySelector('[type="submit"]').disabled = false;
 }
 function preferSearchPlatform() { catalogHint(); }
@@ -279,8 +483,8 @@ function renderSelected(track) {
 }
 async function searchSongs(event) {
   event.preventDefault();
-  const platform = 'lastfm';
-  const kind = $('lastfmSearchMode').value;
+  const platform = $('catalogPlatform').value;
+  const kind = platform === 'lastfm' ? $('lastfmSearchMode').value : 'track';
   const q = $('songQuery').value.trim();
   const seq = ++searchCounter;
   clearSelected();
@@ -294,7 +498,7 @@ async function searchSongs(event) {
     const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind})}`);
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
-    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : 'Last.fm에서 결과가 없어. 곡 제목이나 아티스트 이름을 바꿔 검색해 봐.';
+    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
     $('catalogResults').innerHTML = catalogResults.map((song, i) => {
       const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" />` : '<span class="no-art">♫</span>';
       return `<button type="button" class="catalog-result" data-index="${i}" role="listitem"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${escaped(catalogLabel(song.sourceCatalog))}${song.album ? ' · '+escaped(song.album) : ''}${song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">선택 ↗</span></button>`;
@@ -339,7 +543,8 @@ async function addSong(event) {
     $('searchStatus').textContent = '다른 곡을 검색해 추천할 수 있어.';
     await refreshRoom();
     toast('추천곡이 등록됐어!');
-    if (window.innerWidth < 721) $('songList').scrollIntoView({behavior:'smooth',block:'start'});
+    closeAddPanel();
+    $('bubbleCanvas').scrollIntoView({behavior:'smooth',block:'center'});
   } catch(e) { toast(e.message,true); }
   finally { setBusy(form,false); }
 }
@@ -373,12 +578,6 @@ async function copyShare() {
     toast('초대 링크를 복사했어! 친구에게 보내 줘.');
   } catch { window.prompt('초대 링크를 복사해 줘:',url); }
 }
-function setSort(sort) {
-  state.sort = sort;
-  $('sortRecent').classList.toggle('active',sort==='recent');
-  $('sortLikes').classList.toggle('active',sort==='likes');
-  renderSongs();
-}
 async function init() {
   $('homeBtn').addEventListener('click',showLanding);
   $('accountButton').addEventListener('click', () => state.user ? showProfile() : showAuth());
@@ -391,7 +590,7 @@ async function init() {
   $('logoutButton').addEventListener('click',logout);
   $('authOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideAuth(); });
   $('profileOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideProfile(); });
-  document.addEventListener('keydown', e => { if(e.key==='Escape') { hideAuth(); hideProfile(); } });
+  document.addEventListener('keydown', e => { if(e.key==='Escape') { hideAuth(); hideProfile(); closeBubbleDetail(); closeAddPanel(); } });
   $('createForm').addEventListener('submit',createRoom);
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
@@ -403,10 +602,9 @@ async function init() {
     $('searchStatus').textContent = '검색 버튼을 눌러 음원을 찾아 줘.';
   });
 
-  $('songList').addEventListener('click',onSongAction);
+  initBubbleCanvas();
+  $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
   $('shareBtn').addEventListener('click',copyShare);
-  $('sortRecent').addEventListener('click',()=>setSort('recent'));
-  $('sortLikes').addEventListener('click',()=>setSort('likes'));
   renderAccount();
   catalogHint();
   try {
