@@ -221,9 +221,28 @@ function bubblePosition(index) {
   const size = 134 + (index * 37 % 25);
   return { x: Math.round(Math.cos(angle) * radius), y: Math.round(Math.sin(angle) * radius), size };
 }
+// The iTunes Search API provides 100x100 artwork links. Apple CDN images
+// support larger size variants without an additional music-search request.
+// Rewrite only recognized Apple artwork CDN URLs; leave all other URLs intact.
+function highResArtworkUrl(url, size = 600) {
+  const original = String(url || '');
+  try {
+    const parsed = new URL(original);
+    if (parsed.protocol !== 'https:' || !/(^|\.)mzstatic\.com$/i.test(parsed.hostname)) return original;
+    parsed.pathname = parsed.pathname.replace(
+      /([/.])\d{2,4}x\d{2,4}(bb(?:-\d+)?|-\d+)?(\.(?:jpe?g|png|webp))$/i,
+      (_match, prefix, suffix = '', extension) => `${prefix}${size}x${size}${suffix}${extension}`
+    );
+    return parsed.toString();
+  } catch {
+    return original;
+  }
+}
 function bubbleArtwork(song) {
   if (song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)) {
-    return `<img src="${escaped(song.artworkUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" /><span class="bubble-image-fallback" style="display:none">♫</span>`;
+    // Try the high-resolution image first, then fall back to the existing URL.
+    const highResUrl = highResArtworkUrl(song.artworkUrl);
+    return `<img src="${escaped(highResUrl)}" data-original-src="${escaped(song.artworkUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(!this.dataset.retriedOriginal && this.src !== this.dataset.originalSrc){this.dataset.retriedOriginal='1';this.src=this.dataset.originalSrc;}else{this.style.display='none';this.nextElementSibling.style.display='grid';}" /><span class="bubble-image-fallback" style="display:none">♫</span>`;
   }
   return '<span class="bubble-image-fallback">♫</span>';
 }
@@ -269,7 +288,7 @@ function renderBubbleDetail(song) {
   const owned = song.userId === state.user?.id;
   const provider = bubbleProvider(song);
   const art = song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)
-    ? `<img src="${escaped(song.artworkUrl)}" alt="앨범 커버" loading="lazy" referrerpolicy="no-referrer"/>`
+    ? `<img src="${escaped(highResArtworkUrl(song.artworkUrl))}" data-original-src="${escaped(song.artworkUrl)}" alt="앨범 커버" loading="lazy" referrerpolicy="no-referrer" onerror="if(!this.dataset.retriedOriginal && this.src !== this.dataset.originalSrc){this.dataset.retriedOriginal='1';this.src=this.dataset.originalSrc;}else{this.parentElement.textContent='♫';}"/>`
     : '<span class="detail-record">♫</span>';
   const range = song.startSeconds !== null && song.startSeconds !== undefined
     ? `<div class="bubble-detail-range">♫ 추천 구간: ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – ' + timeLabel(song.endSeconds) : '부터'}</div>` : '';

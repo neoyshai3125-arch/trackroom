@@ -1,40 +1,30 @@
-# TRACKROOM v5.6 — Apple/iTunes 검색 개선 · 50개 결과 · 검색 결과 정렬
+# TRACKROOM v5.7 — HD album artwork in the bubble canvas
 
-이 버전은 TRACKROOM v5.5를 기반으로 합니다. 로그인, 프로필, 추천방, 버블 캔버스, Last.fm 검색, 곡 등록은 유지합니다.
+Update based on TRACKROOM v5.6. This patch changes only `public/app.js`.
 
-## 바뀐 점
+## Changes
+- Apple/iTunes artwork supplied as `artworkUrl100` (typically 100x100 pixels) is requested from Apple's CDN at 600x600 for the large music bubbles and their detail panel.
+- For an unsupported image URL or non-Apple provider, keep the original URL untouched.
+- If a high-resolution image fails to load, automatically try the original image; if that fails, use the existing fallback artwork.
+- Covers previously added and saved in rooms get upgraded when the bubble UI renders. No SQLite migration, API key change, or re-registration is needed.
+- Small search-result thumbnails remain unchanged to avoid unnecessary data use.
 
-1. **Apple/iTunes 검색 범위 개선**: 미국 결과가 있어도 일본 검색을 생략하지 않습니다. 양쪽 결과를 섞고, 동일한 제목·아티스트·앨범의 중복 음원을 정리합니다. 여전히 Apple Music 한국 전체 카탈로그와 동일하지는 않습니다.
-2. **최대 50개 결과**: 검색 API에는 국가별로 최대 150개씩 요청하고, 합친 결과를 최대 50개까지 노출합니다. 검색되는 곡 자체가 적으면 50개 미만일 수 있습니다. Last.fm의 검색 반환 수도 최대 50개로 늘렸습니다.
-3. **앨범 검색 강화**: 앨범명으로 검색하여 원하는 앨범을 누르면 앨범 ID로 수록곡을 조회합니다. `MONOLITH`처럼 수록곡이 일반 검색에서 빠지는 경우에 유용합니다. 앨범명으로 곡 검색 시 정확히 일치하는 **단 하나의** 앨범을 찾은 경우에는 수록곡을 추가 탐색합니다. 동일한 이름의 앨범이 여러 개면 엉뚱한 곡이 섞이지 않도록 자동 확장하지 않습니다.
-4. **일부 언어별 표기 보완**: `괴수의 꽃노래` 같은 특정 현지화 표기는 원제 `怪獣の花唄`도 다시 검색하도록 했습니다. 모든 곡을 자동 번역하는 기능은 아닙니다.
-5. **인기순·최신순은 검색 결과 전용**: 검색 패널에서 정렬 기준을 고릅니다. 버블 배치는 인기순·최신순 정렬과 완전히 분리해 항상 안정적인 위치를 유지합니다.
-   - **인기순(검색 순위 기준)**: Apple 공개 검색 API는 곡별 청취 수, 조회 수, 실시간 인기 점수를 반환하지 않으므로 API가 제공한 *검색 관련도 순위*를 대용 지표로 사용합니다. 실제 인기 순위와 다를 수 있습니다.
-   - **최신순**: 검색 응답에 포함된 `releaseDate`를 기준으로 내림차순 정렬합니다. Last.fm처럼 발매일을 제공하지 않은 결과는 기존 순서대로 표시됩니다.
-6. **기존 음원 데이터 보존**: 기존 로그인·추천 데이터베이스 스키마를 변경하지 않습니다. 단, Render 무료 인스턴스의 SQLite는 재배포 시 사라질 수 있으니 중요한 기록은 먼저 백업해야 합니다.
+## Installation
+1. Open the GitHub repository at `trackroom/public`.
+2. Replace `public/app.js` with the file in this ZIP at the same path.
+3. Commit changes and wait for Render to report Live.
+4. Hard-refresh the site (Ctrl+Shift+R, or refresh in a private tab on mobile).
 
-## 적용 파일
+No change to `server.py`, `public/style.css`, `public/index.html`, or Render environment variables is needed.
 
-업데이트 ZIP 안의 네 파일을 GitHub 저장소의 동일한 경로에 덮어쓰세요.
+## Notes
+- Image clarity improves only when a matching higher-resolution image exists on Apple's CDN; upscaling a low-resolution source by CSS does not create image detail.
+- An absent/mismatched cover remains absent; the patch does not change song matching or catalog search.
+- Apple artwork use must comply with the content owner's copyright and Apple's promotional-content terms, even for an unlisted site.
 
-```text
-server.py
-public/index.html
-public/app.js
-public/style.css
-```
-
-Render Start Command `python server.py`와 기존 환경변수는 그대로 유지합니다. `Commit changes` 뒤 Render 자동 배포 완료 시 강력 새로고침(`Ctrl + Shift + R`)하세요.
-
-## 테스트
-
-- Python 서버 자동 테스트: 30개 통과(기존 25개 + 신규 5개)
-- JavaScript 문법 검사: 통과
-- Apple 공개 Search API 요청 형식과 검색 제한은 공식 문서를 확인했습니다.
-- **외부 Apple API 응답에 대한 실시간 테스트는 현재 실행 환경의 네트워크 제약으로 실시하지 못했습니다.** 브라우저 localhost 연결 또한 실행 환경의 접근 제한으로 테스트되지 않았습니다. Render 배포 후 `MONOLITH`(앨범 검색), `괴수의 꽃노래`(곡 검색), `아이유`(가수 검색)를 실제 확인해야 합니다.
-
-## 운영 및 주의사항
-
-- Apple Search API는 1~200 결과 요청을 지원하지만, 반환한 곡이 50개 이상이라는 보장은 없습니다. 제공 국가(US/JP)에 따라 검색 결과가 달라집니다.
-- 서버 측 Apple 요청은 분당 약 20회 제한을 고려해 간격을 두므로 일부 검색은 시간이 걸릴 수 있습니다. 캐시는 약 3분 유지됩니다.
-- 앨범 이미지의 사용은 Apple의 홍보 목적/스토어 링크 등의 이용 조건을 확인해야 합니다. 사용 권리 문제는 사이트를 사적으로 테스트한다고 자동으로 면제되는 것은 아닙니다.
+## Validation
+- Node.js syntax check passed.
+- 7 Apple/non-Apple image URL rewrite cases passed.
+- Bubble markup fallback checks passed.
+- Existing TRACKROOM v5.6 server suite: 30 tests passed.
+- Real Apple image CDN requests and deployed Render environment were not tested here.
