@@ -1,30 +1,52 @@
-# TRACKROOM v5.7 — HD album artwork in the bubble canvas
+# TRACKROOM v5.8 — 앨범 커버 클릭 → 전체 수록곡
 
-Update based on TRACKROOM v5.6. This patch changes only `public/app.js`.
+기반: v5.6 검색/정렬/버블, v5.7 고화질 버블 이미지 코드.
 
-## Changes
-- Apple/iTunes artwork supplied as `artworkUrl100` (typically 100x100 pixels) is requested from Apple's CDN at 600x600 for the large music bubbles and their detail panel.
-- For an unsupported image URL or non-Apple provider, keep the original URL untouched.
-- If a high-resolution image fails to load, automatically try the original image; if that fails, use the existing fallback artwork.
-- Covers previously added and saved in rooms get upgraded when the bubble UI renders. No SQLite migration, API key change, or re-registration is needed.
-- Small search-result thumbnails remain unchanged to avoid unnecessary data use.
+## 이번 업데이트
 
-## Installation
-1. Open the GitHub repository at `trackroom/public`.
-2. Replace `public/app.js` with the file in this ZIP at the same path.
-3. Commit changes and wait for Render to report Live.
-4. Hard-refresh the site (Ctrl+Shift+R, or refresh in a private tab on mobile).
+- 검색 결과에서 **앨범 커버**를 누르면 그 곡이 수록된 앨범을 열고 전체 수록곡을 표시합니다.
+- 검색 결과에서 **곡 제목/정보**를 누르면 이전처럼 곡이 선택되어 추천방에 등록할 수 있습니다.
+- 앨범 화면에 앨범 커버, 제목, 가수, 수록곡 수를 표시합니다.
+- 앨범 안에서는 원래 수록 순서(트랙 번호)대로 표시합니다.
+- 앨범 안에서 수록곡을 누르면 해당 곡을 추천할 수 있습니다.
+- **검색 결과로 돌아가기**를 누르면 앞서 보던 곡 검색 결과와 스크롤 위치가 복원됩니다.
+- Apple/iTunes의 경우 검색 결과에서 얻은 정확한 `collectionId`를 사용해 해당 앨범의 수록곡을 조회합니다. 검색 제목이 비슷한 다른 앨범으로 추측 이동하지 않습니다.
+- Last.fm은 `track.getInfo`에서 연결된 앨범을 확인한 다음 `album.getInfo`로 수록곡을 불러옵니다. 해당 곡에 앨범 메타데이터가 없는 경우 안내문을 표시합니다.
+- 기존 로그인, 검색, 추천곡 등록, 버블 UI, 커버 화질 향상 기능을 유지합니다.
 
-No change to `server.py`, `public/style.css`, `public/index.html`, or Render environment variables is needed.
+## 화면 조작
 
-## Notes
-- Image clarity improves only when a matching higher-resolution image exists on Apple's CDN; upscaling a low-resolution source by CSS does not create image detail.
-- An absent/mismatched cover remains absent; the patch does not change song matching or catalog search.
-- Apple artwork use must comply with the content owner's copyright and Apple's promotional-content terms, even for an unlisted site.
+1. 음악 추가 → Apple/iTunes (기본) 또는 Last.fm → 곡 검색.
+2. **검색 결과의 앨범 커버를 클릭/탭** → 앨범 화면.
+3. 앨범 안에서 수록곡을 선택해 추천방에 등록하거나, **← 검색 결과로 돌아가기** 클릭.
+4. 검색 결과에서 커버 옆의 **곡 제목을 클릭**하면 앨범으로 이동하지 않고 그 곡만 선택합니다.
 
-## Validation
-- Node.js syntax check passed.
-- 7 Apple/non-Apple image URL rewrite cases passed.
-- Bubble markup fallback checks passed.
-- Existing TRACKROOM v5.6 server suite: 30 tests passed.
-- Real Apple image CDN requests and deployed Render environment were not tested here.
+## 배포
+
+업데이트 ZIP에 포함된 네 파일을 GitHub의 같은 경로에 교체합니다.
+
+```text
+server.py
+public/app.js
+public/index.html
+public/style.css
+```
+
+그 뒤 GitHub에 Commit → Render의 Live 확인 → 강력 새로고침 Ctrl+Shift+R.
+
+기존 API 키, 로그인 정보 형식, DB 테이블 구조, Render Start Command는 변경할 필요가 없습니다.
+
+## 테스트
+
+- 기존 30개 테스트 + 새 6개 테스트: **36개 통과**.
+- Python 문법 검사 및 Node.js JavaScript 문법 검사 통과.
+- 실제 외부 Apple/Last.fm 서버에 호출하는 실시간 테스트는 실행 환경의 네트워크 제약으로 진행하지 못했습니다.
+- 브라우저가 로컬 테스트 주소를 차단하여 실제 클릭 흐름의 브라우저 자동화는 확인하지 못했습니다. 배포 후 손으로 확인해야 합니다.
+
+## 주의
+
+- Apple/iTunes 검색 결과에는 앨범 ID가 있으므로 같은 제목의 다른 앨범으로 이동할 위험을 줄였습니다.
+- Last.fm에서 일부 노래는 원래 앨범 연결 정보가 없어 앨범 바로 가기가 불가능합니다. 이 경우 앨범명 검색을 사용하세요.
+- Apple 조회 API의 최대 응답 수 등 서비스 제한 때문에 극히 큰 앨범은 일부 곡이 빠질 수 있습니다.
+- 이번 업데이트는 **검색 결과 화면**의 커버 클릭에 적용되며, 버블 캔버스의 커버 클릭은 기존 추천곡 상세 보기로 남습니다.
+- Render 무료 인스턴스에서 SQLite 로컬 DB를 쓰면 재배포 시 저장된 곡·회원정보가 사라질 수 있으므로 중요한 기록은 먼저 백업하세요.

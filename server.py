@@ -663,7 +663,7 @@ def normalize_apple_record(row, country, item_type='track'):
         if not (str(sid).isdigit() and title and artist): return None
         result = {'itemType':'album', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
                   'sourceId':str(sid), 'title':title[:120], 'artist':artist[:120],
-                  'album':title[:120], 'storeCountry':country, 'musicUrl':link[:500],
+                  'album':title[:120], 'albumId':str(sid), 'storeCountry':country, 'musicUrl':link[:500],
                   'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
                   'durationMs':None, 'isrc':'', 'releaseDate':row.get('releaseDate','')}
     else:
@@ -673,6 +673,7 @@ def normalize_apple_record(row, country, item_type='track'):
                 'sourceId':str(row['trackId']), 'title':str(row.get('trackName') or '')[:120],
                 'artist':str(row.get('artistName') or '')[:120],
                 'album':str(row.get('collectionName') or '')[:120],
+                'albumId':str(row.get('collectionId') or ''), 'storeCountry':country,
                 'musicUrl':link[:500], 'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
                 'durationMs':row.get('trackTimeMillis') or None, 'isrc':'',
                 'releaseDate':row.get('releaseDate','')}
@@ -895,7 +896,10 @@ def search_catalog(platform, query, search_mode='track'):
                 result.append({'sourcePlatform':'apple','sourceCatalog':'apple_music',
                     'sourceId':str(t.get('id', '')), 'title':attr.get('name',''),
                     'artist':attr.get('artistName',''), 'album':attr.get('albumName', ''),
-                    'musicUrl':item_url, 'artworkUrl':safe_artwork(art),
+                    'albumId': str(next((a.get('id','') for a in
+                                     ((t.get('relationships') or {}).get('albums') or {}).get('data', [])
+                                     if a.get('id')), '')),
+                    'storeCountry':'KR', 'musicUrl':item_url, 'artworkUrl':safe_artwork(art),
                     'durationMs':attr.get('durationInMillis') or None,
                     'isrc':attr.get('isrc', ''), 'releaseDate':attr.get('releaseDate',''),
                     'searchRank':len(result)})
@@ -990,12 +994,13 @@ def fetch_album_tracks(album):
                             'sourceId':str(track_id),'title':row.get('trackName','')[:120],
                             'artist':row.get('artistName','')[:120],
                             'album':row.get('collectionName','')[:120],
-                            'musicUrl':link[:500],
+                            'albumId':str(row.get('collectionId') or album_id),
+                            'storeCountry':country, 'musicUrl':link[:500],
                             'artworkUrl':safe_artwork(row.get('artworkUrl100','')) or album.get('artworkUrl',''),
                             'durationMs':row.get('trackTimeMillis') or None,'isrc':'',
                             'releaseDate':row.get('releaseDate',''),
                             'trackNumber':row.get('trackNumber',0)})
-        return [t for t in results if t['title'] and t['artist']][:80]
+        return [t for t in results if t['title'] and t['artist']]
     if album.get('sourcePlatform') == 'lastfm':
         response = lastfm_api('album.getinfo', artist=album['artist'], album=album['title'], autocorrect=1)
         tracks = (response.get('album') or {}).get('tracks') or {}
@@ -1016,8 +1021,84 @@ def fetch_album_tracks(album):
                             'sourceId':song_id,'title':title[:120],'artist':artist[:120],
                             'album':album['title'][:120], 'musicUrl':link[:500],
                             'artworkUrl':'','durationMs':None,'isrc':'','searchRank':len(results)})
-        return results[:80]
+        return results
     raise APIError('앨범 검색 결과가 올바르지 않아.',422)
+
+
+
+def album_for_search_track(track):
+    """Return the actual album and its tracklist from one signed search result.
+
+    iTunes track results contain collectionId; this must be preserved in the
+    signed payload so the cover opens the correct edition, not a title guess.
+    Last.fm uses track.getInfo to discover the album, then album.getInfo.
+    """
+    if track.get('itemType', 'track') == 'album':
+        album = track
+    elif track.get('sourcePlatform') == 'apple' and track.get('sourceCatalog') == 'itunes_store':
+        album_id = str(track.get('albumId') or '')
+        country = track.get('storeCountry', 'US')
+        if not (album_id.isdigit() and country in ('US', 'JP')):
+            # Backward compatibility for signed search results made before v5.8.
+            # Resolve by track ID; NEVER guess by album title alone.
+            tid = str(track.get('sourceId') or '')
+            if not tid.isdigit():
+                raise APIError('앨범 ID가 없어. 곡을 다시 검색해 줘.', 422)
+            with APPLE_QUERY_LOCK:
+                pause = max(0.0, APPLE_NEXT_QUERY[0] - time.monotonic())
+                if pause: time.sleep(pause)
+                APPLE_NEXT_QUERY[0] = time.monotonic() + APPLE_MIN_INTERVAL
+            data = request_json('https://itunes.apple.com/lookup?' + urllib.parse.urlencode({
+                'id': tid, 'country': country}),
+                headers={'User-Agent':'TRACKROOM/0.58'}, timeout=8)
+            match = next((item for item in data.get('results', [])
+                          if str(item.get('trackId', '')) == tid), None)
+            album_id = str((match or {}).get('collectionId') or '')
+            if not album_id.isdigit():
+                raise APIError('이 곡의 앨범 정보를 찾을 수 없어.', 404)
+        album = {
+            'itemType':'album', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
+            'sourceId': album_id, 'albumId': album_id, 'storeCountry': country,
+            'title': track.get('album') or '', 'artist': track['artist'],
+            'album': track.get('album') or '',
+            'artworkUrl': track.get('artworkUrl') or '',
+            'musicUrl': track.get('artworkStoreUrl') or track['musicUrl']
+        }
+    elif track.get('sourcePlatform') == 'lastfm':
+        info = lastfm_api('track.getInfo', artist=track['artist'], track=track['title'], autocorrect=1)
+        actual = info.get('track') or {}
+        parent = actual.get('album') or {}
+        name = parent.get('title') or ''
+        artist = parent.get('artist') or track['artist']
+        url = str(parent.get('url') or '').replace('http://','https://',1)
+        if not (isinstance(name,str) and name.strip() and
+                isinstance(artist,str) and artist.strip() and valid_lastfm_url(url)):
+            raise APIError('Last.fm에 이 곡의 앨범 연결 정보가 없어. 앨범명으로 검색해 줘.',404)
+        album = {
+            'itemType':'album','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+            'sourceId':str(parent.get('mbid') or ('url-' + hashlib.sha256(url.encode()).hexdigest()[:32])),
+            'title':name[:120], 'artist':artist[:120], 'album':name[:120],
+            'musicUrl':url[:500], 'artworkUrl':track.get('artworkUrl') or ''
+        }
+    else:
+        raise APIError('이 검색 서비스에서는 앨범 바로 가기를 아직 지원하지 않아.',422)
+
+    tracks = fetch_album_tracks(album)
+    if not tracks:
+        raise APIError('앨범은 찾았지만 수록곡 목록을 가져오지 못했어.',404)
+    # Verify the exact track-to-album link for Apple (not fuzzy title matching).
+    # This protects against mismatched artwork/card association.
+    if (track.get('itemType') != 'album' and track.get('sourcePlatform') == 'apple'
+            and track.get('sourceCatalog') == 'itunes_store'
+            and not any(str(t.get('sourceId')) == str(track.get('sourceId')) for t in tracks)):
+        raise APIError('선택한 곡이 해당 앨범의 수록곡으로 확인되지 않아.',404)
+    tracks.sort(key=lambda item: int(item.get('trackNumber') or 0))
+    album_info = {
+        'title':album['title'], 'artist':album['artist'],
+        'artworkUrl':album.get('artworkUrl') or next((t.get('artworkUrl') for t in tracks if t.get('artworkUrl')), ''),
+        'musicUrl':album.get('musicUrl',''), 'trackCount':len(tracks),
+    }
+    return album_info, tracks
 
 
 def sign_selection(track, user_id):
@@ -1241,9 +1322,19 @@ class Handler(BaseHTTPRequestHandler):
             if selection.get('itemType') != 'album':
                 raise APIError('앨범 검색 결과를 먼저 선택해 줘.',422)
             search_rate_limit(user['id'])
-            tracks = fetch_album_tracks(selection)
+            album_info, tracks = album_for_search_track(selection)
             return self.send_json({'results':[{**song, 'selectionToken':sign_selection(song,user['id'])}
-                                              for song in tracks], 'album':selection['title']})
+                                              for song in tracks], 'album':selection['title'], 'albumInfo':album_info})
+
+        if method == 'POST' and route == '/api/catalog/track-album':
+            selection = verify_selection(self.body().get('selectionToken'), user['id'])
+            if selection.get('itemType') == 'album':
+                raise APIError('먼저 곡 검색 결과를 선택해 줘.', 422)
+            search_rate_limit(user['id'])
+            album_info, tracks = album_for_search_track(selection)
+            return self.send_json({'albumInfo':album_info,
+                                   'results':[{**song, 'selectionToken':sign_selection(song,user['id'])}
+                                              for song in tracks]})
 
         if method == 'GET' and route == '/api/catalog/search':
             params = parse_qs(parsed.query)

@@ -127,3 +127,22 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 .catalog-sort-row select{max-width:230px;width:60%;padding:10px 12px;border-radius:10px;border:1px solid #596b56;color:#edf4ea;background:#19221b;font-size:12px}
 .catalog-sort-row select:focus-visible{outline:2px solid #ccf476;outline-offset:2px}
 @media(max-width:440px){.catalog-sort-row{align-items:flex-start;flex-direction:column}.catalog-sort-row select{width:100%;max-width:none}}
+
+/* v5.8 — cover opens album, title selects recommendation */
+.catalog-result{padding:7px;gap:8px;align-items:stretch}
+.catalog-art-button{border:1px solid #66835d;position:relative;cursor:pointer;padding:0;transition:box-shadow .15s,border-color .15s}
+.catalog-art-button:hover,.catalog-art-button:focus-visible{border-color:var(--lime);box-shadow:0 0 0 2px #cdf57c50;outline:0}
+.catalog-art-button .album-art-hint{position:absolute;right:0;bottom:0;padding:1px 5px;font-size:12px;background:#152018df;color:#dcff9c;border-radius:6px 0 0 0}
+.catalog-result-main{min-width:0;flex:1;display:flex;gap:8px;align-items:center;text-align:left;background:transparent;color:inherit;border:0;border-radius:7px;padding:4px 5px}
+.catalog-result-main:hover,.catalog-result-main:focus-visible{outline:1px solid #c4ea8066;background:#bde6860d}
+.catalog-result.is-selected{border-color:var(--lime);background:#253223}
+.catalog-result-main .catalog-result-info{flex:1}
+.catalog-album-header{margin:10px 0 14px;display:flex;align-items:center;gap:12px;background:#1d2820;border:1px solid #637958;border-radius:15px;padding:12px}
+.catalog-album-cover{width:86px;height:86px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:10px;background:#344333;color:#cbea97;font-size:36px}
+.catalog-album-cover img{width:100%;height:100%;object-fit:cover}
+.catalog-album-info{display:flex;min-width:0;flex-direction:column;gap:5px}
+.catalog-album-eyebrow{color:var(--lime);font-size:9px;font-weight:800;letter-spacing:1.5px}
+.catalog-album-info strong{font-size:15px;overflow-wrap:anywhere}
+.catalog-album-info span{font-size:12px;color:#d2dfd0}
+.catalog-album-info small{font-size:10px;color:#9cafa0}
+@media(max-width:400px){.catalog-album-cover{width:68px;height:68px}.catalog-result-main{gap:3px;padding:2px}.catalog-result{gap:4px}}

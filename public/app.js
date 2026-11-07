@@ -560,32 +560,93 @@ async function resolveSearchCovers(seq) {
     `${catalogResults.length}곡 발견 · 커버 확인 완료 · 곡을 눌러 선택해 줘.`;
 }
 
+// Keep track-selection and album-navigation as separate actions.
+// The artwork is a button; the adjacent title/details button still selects
+// a track for recommendation. Album-search results open the album either way.
 function renderCatalogResults() {
+  const browsingAlbum = Boolean(albumSearchResults);
   const latest = $('catalogResultSort').value === 'recent';
   const entries = catalogResults.map((song,index) => ({song,index}));
-  entries.sort((a,b) => {
-    if (latest) {
-      const dateA = Date.parse(a.song.releaseDate || '') || 0;
-      const dateB = Date.parse(b.song.releaseDate || '') || 0;
-      if (dateB !== dateA) return dateB - dateA;
-    }
-    // Apple does not provide play counts. The storefront search ranking is
-    // a relevance-based proxy only; preserve stable rank when dates are tied.
-    const rankA = Number.isFinite(Number(a.song.searchRank)) ? Number(a.song.searchRank) : a.index;
-    const rankB = Number.isFinite(Number(b.song.searchRank)) ? Number(b.song.searchRank) : b.index;
-    return rankA - rankB || a.index - b.index;
-  });
+  if (browsingAlbum) {
+    entries.sort((a,b) => {
+      const aNum = Number(a.song.trackNumber || 0), bNum = Number(b.song.trackNumber || 0);
+      return (aNum && bNum ? aNum-bNum : 0) || a.index-b.index;
+    });
+  } else {
+    entries.sort((a,b) => {
+      if (latest) {
+        const dateA = Date.parse(a.song.releaseDate || '') || 0;
+        const dateB = Date.parse(b.song.releaseDate || '') || 0;
+        if (dateB !== dateA) return dateB - dateA;
+      }
+      const rankA = Number.isFinite(Number(a.song.searchRank)) ? Number(a.song.searchRank) : a.index;
+      const rankB = Number.isFinite(Number(b.song.searchRank)) ? Number(b.song.searchRank) : b.index;
+      return rankA - rankB || a.index - b.index;
+    });
+  }
   $('catalogResults').innerHTML = entries.map(({song,index:i}) => {
     const isAlbum = song.itemType === 'album';
-    const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="this.parentElement.textContent='♫'" />` : '<span class="no-art">♫</span>';
-    return `<button type="button" class="catalog-result" data-index="${i}" role="listitem" aria-label="${escaped(song.title)} ${isAlbum ? '앨범 수록곡 보기' : '곡 선택'}"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 수록곡 보기' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">${isAlbum ? '수록곡 ↗' : '선택 ↗'}</span></button>`;
+    const art = song.artworkUrl
+      ? `<img src="${escaped(highResArtworkUrl(song.artworkUrl))}" data-original-src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="if(!this.dataset.retriedOriginal && this.src!==this.dataset.originalSrc){this.dataset.retriedOriginal='1';this.src=this.dataset.originalSrc;}else{this.parentElement.textContent='♫'}" />`
+      : '<span class="no-art">♫</span>';
+    const label = escaped(song.title);
+    const details = `<span class="catalog-result-info"><strong>${label}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 전체 수록곡' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span>`;
+    const artLabel = escaped(isAlbum ? `${song.title} 앨범 수록곡 보기` : `${song.title}의 앨범 수록곡 보기`);
+    // While viewing an album, the cover is decorative: title selects the track.
+    const cover = browsingAlbum
+      ? `<span class="catalog-art">${art}</span>`
+      : `<button class="catalog-art catalog-art-button" type="button" data-index="${i}" data-catalog-action="album" title="앨범 전체 보기" aria-label="${artLabel}">${art}<span class="album-art-hint" aria-hidden="true">↗</span></button>`;
+    const action = isAlbum ? 'album' : 'select';
+    const cta = isAlbum ? '수록곡 ↗' : '선택 ↗';
+    return `<div class="catalog-result" data-track-index="${i}" role="listitem">${cover}<button type="button" class="catalog-result-main" data-index="${i}" data-catalog-action="${action}" aria-label="${label} ${isAlbum ? '앨범 열기' : '추천곡 선택'}">${details}<span class="catalog-choose">${cta}</span></button></div>`;
   }).join('');
 }
 function clearAlbumNavigation() {
   albumSearchResults = null;
   $('albumBack').classList.add('hidden');
+  $('catalogAlbumHeader').classList.add('hidden');
+  $('catalogAlbumHeader').innerHTML = '';
 }
-
+function renderAlbumInfo(album) {
+  const art = album.artworkUrl
+    ? `<img src="${escaped(highResArtworkUrl(album.artworkUrl))}" alt="앨범 커버" referrerpolicy="no-referrer" onerror="if(!this.dataset.retriedOriginal){this.dataset.retriedOriginal='1';this.src='${escaped(album.artworkUrl)}';}else{this.style.display='none'}" />`
+    : '<span aria-hidden="true">♫</span>';
+  $('catalogAlbumHeader').innerHTML = `<div class="catalog-album-cover">${art}</div><div class="catalog-album-info"><div class="catalog-album-eyebrow">ALBUM · 전체 수록곡</div><strong>${escaped(album.title)}</strong><span>${escaped(album.artist)}</span><small>${Number(album.trackCount)||catalogResults.length}곡 · 곡 제목을 누르면 추천할 수 있어.</small></div>`;
+  $('catalogAlbumHeader').classList.remove('hidden');
+}
+async function openAlbumFromResult(song, trigger) {
+  const seq = ++searchCounter;
+  const previous = [...catalogResults];
+  const previousStatus = $('searchStatus').textContent;
+  const previousScroll = $('catalogResults').scrollTop;
+  $('searchStatus').textContent = `「${song.album || song.title}」의 수록곡을 불러오는 중…`;
+  trigger.disabled = true;
+  try {
+    const url = song.itemType === 'album' ? '/api/catalog/album-tracks' : '/api/catalog/track-album';
+    const result = await api(url, {
+      method:'POST', body:JSON.stringify({selectionToken:song.selectionToken})
+    });
+    if (seq !== searchCounter) return;
+    if (!result.results?.length) throw new Error('이 앨범의 수록곡을 찾지 못했어.');
+    albumSearchResults = {results: previous, status: previousStatus, scroll: previousScroll};
+    clearSelected();
+    catalogResults = result.results;
+    const albumInfo = result.albumInfo || {title:song.album || song.title,artist:song.artist,
+      artworkUrl:song.artworkUrl, trackCount:catalogResults.length};
+    $('albumBack').textContent = '← 검색 결과로 돌아가기';
+    $('albumBack').classList.remove('hidden');
+    $('searchStatus').textContent = `「${albumInfo.title}」 · ${catalogResults.length}곡 · 추천할 곡을 선택해 줘.`;
+    renderAlbumInfo(albumInfo);
+    renderCatalogResults();
+    $('catalogResults').scrollTop = 0;
+    if (song.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
+  } catch(error) {
+    if (seq !== searchCounter) return;
+    $('searchStatus').textContent = error.message;
+    toast(error.message,true);
+    trigger.disabled = false;
+  }
+}
 async function searchSongs(event) {
   event.preventDefault();
   const platform = $('catalogPlatform').value;
@@ -618,48 +679,29 @@ async function searchSongs(event) {
   }
 }
 async function selectSearchResult(event) {
-  const b = event.target.closest('[data-index]');
-  if (!b) return;
-  const song = catalogResults[Number(b.dataset.index)];
+  const trigger = event.target.closest('[data-catalog-action]');
+  if (!trigger) return;
+  const song = catalogResults[Number(trigger.dataset.index)];
   if (!song?.selectionToken) return;
-  if (song.itemType === 'album') {
-    const seq = ++searchCounter;
-    clearSelected();
-    $('searchStatus').textContent = `「${song.title}」의 수록곡을 불러오는 중…`;
-    b.disabled = true;
-    try {
-      const result = await api('/api/catalog/album-tracks', {
-        method: 'POST', body: JSON.stringify({selectionToken:song.selectionToken})
-      });
-      if (seq !== searchCounter) return;
-      albumSearchResults = [...catalogResults];
-      catalogResults = result.results || [];
-      $('albumBack').classList.remove('hidden');
-      $('searchStatus').textContent = catalogResults.length
-        ? `「${song.title}」 · ${catalogResults.length}곡 · 추천할 곡을 선택해 줘.`
-        : '이 앨범에 연결된 수록곡 정보를 찾지 못했어.';
-      renderCatalogResults();
-      if (song.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
-    } catch(error) {
-      if (seq !== searchCounter) return;
-      b.disabled = false;
-      $('searchStatus').textContent = error.message;
-      toast(error.message, true);
-    }
+  if (trigger.dataset.catalogAction === 'album' || song.itemType === 'album') {
+    if (!albumSearchResults) await openAlbumFromResult(song, trigger);
     return;
   }
   selectedTrack = song;
   renderSelected(song);
-  [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el => el.classList.toggle('is-selected', el === b));
+  [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el =>
+    el.classList.toggle('is-selected', Number(el.dataset.trackIndex) === Number(trigger.dataset.index)));
 }
 function backToAlbumResults() {
   if (!albumSearchResults) return;
   ++searchCounter;
   clearSelected();
-  catalogResults = albumSearchResults;
+  const previous = albumSearchResults;
+  catalogResults = previous.results;
   clearAlbumNavigation();
   renderCatalogResults();
-  $('searchStatus').textContent = `${catalogResults.length}개 앨범 발견 · 원하는 앨범을 골라 줘.`;
+  $('searchStatus').textContent = previous.status;
+  $('catalogResults').scrollTop = previous.scroll;
 }
 async function addSong(event) {
   event.preventDefault();
@@ -743,7 +785,7 @@ async function init() {
     const selectedKey = selectedTrack?.sourceId;
     if (selectedKey) {
       [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(b =>
-        b.classList.toggle('is-selected', catalogResults[Number(b.dataset.index)]?.sourceId === selectedKey));
+        b.classList.toggle('is-selected', catalogResults[Number(b.dataset.trackIndex)]?.sourceId === selectedKey));
     }
   });
   $('catalogResults').addEventListener('click', selectSearchResult);
