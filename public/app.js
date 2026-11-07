@@ -4,6 +4,7 @@ let refreshTimer = null;
 let toastTimer = null;
 let selectedTrack = null;
 let catalogResults = [];
+let albumSearchResults = null;
 let searchCounter = 0;
 let bubbleSelectedId = null;
 let bubbleLastRender = '';
@@ -238,8 +239,10 @@ function applyBubbleCamera() {
   $('bubbleCanvas').classList.toggle('zoomed-in', zoom > 1.3);
 }
 function renderSongs() {
-  const songs = [...state.songs].sort((a,b)=> a.id - b.id);
-  const signature = songs.map(s => [s.id,s.title,s.artist,s.artworkUrl,s.likeCount,s.liked,s.nickname,s.note,s.startSeconds,s.endSeconds].join('|')).join('~');
+  const songs = [...state.songs].sort((a,b) =>
+    (state.sort === 'popular' ? Number(b.likeCount || 0) - Number(a.likeCount || 0) : 0) ||
+    Number(b.createdAt || 0) - Number(a.createdAt || 0) || Number(b.id) - Number(a.id));
+  const signature = `${state.sort}|` + songs.map(s => [s.id,s.title,s.artist,s.artworkUrl,s.likeCount,s.liked,s.nickname,s.note,s.startSeconds,s.endSeconds].join('|')).join('~');
   if (signature !== bubbleLastRender) {
     bubbleLastRender = signature;
     $('bubbleStage').innerHTML = songs.map((song, index) => {
@@ -470,10 +473,11 @@ function formatDuration(ms) {
 }
 function catalogHint() {
   const apple = $('catalogPlatform').value === 'apple';
-  $('catalogHint').textContent = apple ? 'Apple/iTunes 공개 음악 카탈로그 검색. 지역별 등록 여부는 다를 수 있어.' : 'Last.fm에서 노래 제목 또는 아티스트를 검색해 줘. 앨범 이미지가 없을 수 있어.';
-  $('catalogSourceLink').href = apple ? 'https://www.apple.com/apple-music/' : 'https://www.last.fm';
-  $('catalogSourceLink').textContent = apple ? 'Apple Music ↗' : 'Powered by Last.fm ↗';
-  $('lastfmSearchMode').disabled = apple;
+  $('catalogHint').textContent = apple
+    ? 'Apple/iTunes에서 곡·가수·앨범을 검색해. 한국 Apple Music 전체 카탈로그와는 다를 수 있어.'
+    : 'Last.fm에서 곡·가수·앨범을 검색해. 일부 커버는 표시되지 않을 수 있어.';
+  $('catalogSourceLink').href = apple ? 'https://performance-partners.apple.com/search-api' : 'https://www.last.fm';
+  $('catalogSourceLink').textContent = apple ? 'iTunes Search API ↗' : 'Powered by Last.fm ↗';
   $('catalogSearchForm').querySelector('[type="submit"]').disabled = false;
 }
 function preferSearchPlatform() { catalogHint(); }
@@ -493,14 +497,72 @@ function renderSelected(track) {
   $('clearTrack').addEventListener('click', clearSelected);
   $('selectedTrack').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+// Fill missing covers one song at a time so every search result gets a fair
+// lookup, without a blocking request or an Apple API burst.
+async function resolveSearchCovers(seq) {
+  const indices = catalogResults.map((song, i) =>
+    song.sourcePlatform === 'lastfm' && !song.artworkUrl ? i : -1
+  ).filter(i => i >= 0);
+  if (!indices.length) return;
+  let checked = 0;
+  for (const i of indices) {
+    if (seq !== searchCounter) return;
+    const original = catalogResults[i];
+    if (!original?.selectionToken) return;
+    try {
+      const data = await api('/api/catalog/cover', {
+        method: 'POST', body: JSON.stringify({selectionToken: original.selectionToken})
+      });
+      if (seq !== searchCounter || !catalogResults[i]) return;
+      checked++;
+      if (data.found && data.artworkUrl) {
+        const updated = {...original, artworkUrl: data.artworkUrl,
+          artworkStoreUrl: data.artworkStoreUrl || '', album: data.album || original.album,
+          selectionToken: data.selectionToken || original.selectionToken};
+        catalogResults[i] = updated;
+        const node = $('catalogResults').querySelector(`[data-index="${i}"] .catalog-art`);
+        if (node) {
+          node.innerHTML = `<img src="${escaped(updated.artworkUrl)}" loading="lazy" alt="앨범 커버" onerror="this.parentElement.textContent='♫'" />`;
+        }
+        if (selectedTrack?.sourceId === original.sourceId && selectedTrack?.sourcePlatform === 'lastfm') {
+          selectedTrack = updated;
+          const cover = $('selectedTrack').querySelector('.chosen-cover');
+          if (cover) cover.innerHTML = `<img src="${escaped(updated.artworkUrl)}" alt="앨범 커버" onerror="this.parentElement.textContent='♫'" />`;
+        }
+      }
+      if (seq === searchCounter) $('searchStatus').textContent =
+        `${catalogResults.length}곡 발견 · 커버 확인 중 ${checked}/${indices.length} · 곡을 눌러 선택해 줘.`;
+    } catch (error) {
+      if (seq === searchCounter) $('searchStatus').textContent =
+        `${catalogResults.length}곡 발견 · 일부 커버 확인에 실패했어. 곡은 그대로 등록할 수 있어.`;
+      return;
+    }
+  }
+  if (seq === searchCounter) $('searchStatus').textContent =
+    `${catalogResults.length}곡 발견 · 커버 확인 완료 · 곡을 눌러 선택해 줘.`;
+}
+
+function renderCatalogResults() {
+  $('catalogResults').innerHTML = catalogResults.map((song, i) => {
+    const isAlbum = song.itemType === 'album';
+    const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="this.parentElement.textContent='♫'" />` : '<span class="no-art">♫</span>';
+    return `<button type="button" class="catalog-result" data-index="${i}" role="listitem" aria-label="${escaped(song.title)} ${isAlbum ? '앨범 수록곡 보기' : '곡 선택'}"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 수록곡 보기' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">${isAlbum ? '수록곡 ↗' : '선택 ↗'}</span></button>`;
+  }).join('');
+}
+function clearAlbumNavigation() {
+  albumSearchResults = null;
+  $('albumBack').classList.add('hidden');
+}
+
 async function searchSongs(event) {
   event.preventDefault();
   const platform = $('catalogPlatform').value;
-  const kind = platform === 'lastfm' ? $('lastfmSearchMode').value : 'track';
+  const kind = $('catalogSearchMode').value;
   const q = $('songQuery').value.trim();
   const seq = ++searchCounter;
   clearSelected();
   catalogResults = [];
+  clearAlbumNavigation();
   $('catalogResults').innerHTML = '';
   if (q.length < 2) return toast('검색어를 2글자 이상 입력해 줘.', true);
   const button = $('catalogSearchForm').querySelector('button[type="submit"]');
@@ -510,11 +572,11 @@ async function searchSongs(event) {
     const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind})}`);
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
-    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
-    $('catalogResults').innerHTML = catalogResults.map((song, i) => {
-      const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" />` : '<span class="no-art">♫</span>';
-      return `<button type="button" class="catalog-result" data-index="${i}" role="listitem"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${escaped(catalogLabel(song.sourceCatalog))}${song.album ? ' · '+escaped(song.album) : ''}${song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span><span class="catalog-choose">선택 ↗</span></button>`;
-    }).join('');
+    $('searchStatus').textContent = catalogResults.length
+      ? `${catalogResults.length}${kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 곡을 눌러 선택해 줘.'}`
+      : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
+    renderCatalogResults();
+    if (platform === 'lastfm' && kind !== 'album') void resolveSearchCovers(seq);
   } catch (error) {
     if (seq !== searchCounter) return;
     $('searchStatus').textContent = error.message;
@@ -523,14 +585,49 @@ async function searchSongs(event) {
     if (seq === searchCounter) catalogHint();
   }
 }
-function selectSearchResult(event) {
+async function selectSearchResult(event) {
   const b = event.target.closest('[data-index]');
   if (!b) return;
-  const track = catalogResults[Number(b.dataset.index)];
-  if (!track?.selectionToken) return;
-  selectedTrack = track;
-  renderSelected(track);
+  const song = catalogResults[Number(b.dataset.index)];
+  if (!song?.selectionToken) return;
+  if (song.itemType === 'album') {
+    const seq = ++searchCounter;
+    clearSelected();
+    $('searchStatus').textContent = `「${song.title}」의 수록곡을 불러오는 중…`;
+    b.disabled = true;
+    try {
+      const result = await api('/api/catalog/album-tracks', {
+        method: 'POST', body: JSON.stringify({selectionToken:song.selectionToken})
+      });
+      if (seq !== searchCounter) return;
+      albumSearchResults = [...catalogResults];
+      catalogResults = result.results || [];
+      $('albumBack').classList.remove('hidden');
+      $('searchStatus').textContent = catalogResults.length
+        ? `「${song.title}」 · ${catalogResults.length}곡 · 추천할 곡을 선택해 줘.`
+        : '이 앨범에 연결된 수록곡 정보를 찾지 못했어.';
+      renderCatalogResults();
+      if (song.sourcePlatform === 'lastfm') void resolveSearchCovers(seq);
+    } catch(error) {
+      if (seq !== searchCounter) return;
+      b.disabled = false;
+      $('searchStatus').textContent = error.message;
+      toast(error.message, true);
+    }
+    return;
+  }
+  selectedTrack = song;
+  renderSelected(song);
   [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el => el.classList.toggle('is-selected', el === b));
+}
+function backToAlbumResults() {
+  if (!albumSearchResults) return;
+  ++searchCounter;
+  clearSelected();
+  catalogResults = albumSearchResults;
+  clearAlbumNavigation();
+  renderCatalogResults();
+  $('searchStatus').textContent = `${catalogResults.length}개 앨범 발견 · 원하는 앨범을 골라 줘.`;
 }
 async function addSong(event) {
   event.preventDefault();
@@ -548,8 +645,10 @@ async function addSong(event) {
       startSeconds, endSeconds
     })});
     form.reset();
+    ++searchCounter; // Abort any remaining cover requests from the old search.
     clearSelected();
     catalogResults = [];
+    clearAlbumNavigation();
     $('catalogResults').innerHTML = '';
     $('songQuery').value = '';
     $('searchStatus').textContent = '다른 곡을 검색해 추천할 수 있어.';
@@ -608,15 +707,24 @@ async function init() {
   $('addSongForm').addEventListener('submit',addSong);
   $('catalogSearchForm').addEventListener('submit', searchSongs);
   $('catalogResults').addEventListener('click', selectSearchResult);
-  $('lastfmSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
+  $('catalogSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); clearAlbumNavigation(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
   $('songQuery').addEventListener('input', () => {
     ++searchCounter;
-    clearSelected(); catalogResults = []; $('catalogResults').innerHTML = '';
+    clearSelected(); clearAlbumNavigation(); catalogResults = []; $('catalogResults').innerHTML = '';
     $('searchStatus').textContent = '검색 버튼을 눌러 음원을 찾아 줘.';
   });
 
   initBubbleCanvas();
-  $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
+  $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();clearAlbumNavigation();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
+  $('albumBack').addEventListener('click', backToAlbumResults);
+  $('canvasSort').addEventListener('change', e => {
+    state.sort = e.target.value === 'popular' ? 'popular' : 'recent';
+    bubbleLastRender = '';
+    bubbleRandomIndex = 0;
+    bubbleCanvasCamera = { x:0, y:0, zoom:1 };
+    closeBubbleDetail();
+    renderSongs();
+  });
   $('shareBtn').addEventListener('click',copyShare);
   renderAccount();
   catalogHint();

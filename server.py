@@ -283,6 +283,10 @@ def safe_artwork(url):
 # under the Last.fm API terms. Only show an Apple match if title AND artist agree.
 ARTWORK_LOOKUP_CACHE = {}
 ARTWORK_LOOKUP_LOCK = threading.Lock()
+# Apple documents approximately 20 iTunes Search API calls/minute.
+APPLE_QUERY_LOCK = threading.Lock()
+APPLE_NEXT_QUERY = [0.0]
+APPLE_MIN_INTERVAL = 3.15
 
 
 def artwork_key(value):
@@ -437,16 +441,24 @@ def musicbrainz_variants(title, artist):
     return value
 
 
-def apple_results(term, country='US', limit=100):
-    url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
-        'term':term, 'country':country, 'media':'music', 'entity':'song',
-        'limit':limit,
-    })
+def apple_results(term, country='US', limit=100, attribute=None, raise_on_error=False):
+    params = {'term':term, 'country':country, 'media':'music', 'entity':'song', 'limit':limit}
+    if attribute:
+        params['attribute'] = attribute
+    url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode(params)
     try:
-        data = request_json(url, headers={'User-Agent':'TRACKROOM/0.5'}, timeout=4)
+        # Limit calls across threads, not just for one user's search.
+        with APPLE_QUERY_LOCK:
+            delay = max(0.0, APPLE_NEXT_QUERY[0] - time.monotonic())
+            if delay:
+                time.sleep(delay)
+            APPLE_NEXT_QUERY[0] = time.monotonic() + APPLE_MIN_INTERVAL
+        data = request_json(url, headers={'User-Agent':'TRACKROOM/0.5'}, timeout=5)
         return data.get('results',[]) if isinstance(data,dict) else []
     except (APIError, ValueError, TypeError) as exc:
         print(f'[TRACKROOM artwork] Apple {country} artwork query failed: {exc}', flush=True)
+        if raise_on_error:
+            raise APIError('Apple 커버 검색에 연결하지 못했어. 잠시 후 다시 시도해 줘.', 503) from exc
         return []
 
 
@@ -480,8 +492,7 @@ def best_artwork_candidate(tracks, items, aliases, accepted):
             if u.scheme != 'https' or u.hostname not in ('itunes.apple.com','music.apple.com'):
                 continue
             if score > best_score:
-                high_res = re.sub(r'100x100(?:bb)?', '300x300bb', art)
-                best = {'url':safe_artwork(high_res) or art, 'storeUrl':link,
+                best = {'url': art, 'storeUrl':link,
                         'album':str(item.get('collectionName') or '')[:120]}
                 best_score = score
         if best and (i not in accepted or best_score > accepted[i][0]):
@@ -537,7 +548,10 @@ def itunes_matches(tracks, query, max_calls=2, limit=150, allow_fallback=True, e
 
 
 def enrich_lastfm_results(results, query):
-    found = itunes_matches(results, query)
+    # Only one broad query per storefront here. A generic artist/title query
+    # cannot fairly cover every Last.fm result; missing covers are resolved
+    # separately, one specific title at a time, without blocking the list.
+    found = itunes_matches(results, query, allow_fallback=False)
     for i, meta in found.items():
         results[i]['artworkUrl'] = meta['url']
         results[i]['artworkStoreUrl'] = meta['storeUrl']
@@ -554,8 +568,25 @@ def find_itunes_cover(title, artist, force=False):
             old = ARTWORK_LOOKUP_CACHE.get(key)
             if old and old[0] > time.time():
                 return old[1]
-    item={'title':title,'artist':artist}
-    match = itunes_matches([item],f'{title} {artist}',limit=100,expand_multilingual=True).get(0,{})
+    item = {'title': title, 'artist': artist}
+    aliases = [lastfm_aliases(item)]
+    found = {}
+    # Exact song-title search finds Korean songs that do not appear in the
+    # first results of an artist-wide query. Compare BOTH title and artist.
+    # Search JP and US storefronts separately; neither is the KR Music store.
+    for country in ('JP', 'US'):
+        candidates = apple_results(title, country, 200, 'songTerm', raise_on_error=True)
+        best_artwork_candidate([item], candidates, aliases, found)
+        if 0 in found and found[0][0] >= 0.999:
+            break
+    if not found:
+        # Some search indexes tokenize title alone poorly. Use title+artist.
+        for country in ('JP', 'US'):
+            candidates = apple_results(f'{title} {artist}', country, 120, raise_on_error=True)
+            best_artwork_candidate([item], candidates, aliases, found)
+            if found:
+                break
+    match = found.get(0, (None, {}))[1]
     with ARTWORK_LOOKUP_LOCK:
         if len(ARTWORK_LOOKUP_CACHE)>1000:ARTWORK_LOOKUP_CACHE.clear()
         # Shorter miss cache than successful match, so a new catalog result can appear.
@@ -716,9 +747,11 @@ def search_catalog(platform, query, search_mode='track'):
         # This remains a metadata fallback, NOT Korean Apple Music availability.
         store_results = []
         for country in ('US', 'JP'):
-            url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
-                'term': query, 'media': 'music', 'entity': 'song',
-                'country': country, 'limit': 15})
+            params = {'term': query, 'media': 'music', 'entity': 'song',
+                      'country': country, 'limit': 15}
+            if search_mode == 'artist':
+                params['attribute'] = 'artistTerm'
+            url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode(params)
             obj = request_json(url)
             store_results = obj.get('results') or []
             if store_results:
@@ -738,6 +771,137 @@ def search_catalog(platform, query, search_mode='track'):
                 'isrc': ''})
         return result
     raise APIError('이 음원 플랫폼은 공식 사이트 내 검색을 아직 지원하지 않아. 다른 검색 제공원을 선택해 줘.', 422)
+
+
+def lastfm_api(method, **arguments):
+    """Read-only Last.fm API helper; no user Last.fm login is needed."""
+    key = os.environ.get('LASTFM_API_KEY', '').strip()
+    if not key:
+        raise APIError('Last.fm API 키가 설정되지 않았어.', 503)
+    url = 'https://ws.audioscrobbler.com/2.0/?' + urllib.parse.urlencode({
+        'method':method, 'api_key':key, 'format':'json', **arguments
+    })
+    data = request_json(url, headers={'User-Agent':'TRACKROOM/0.5 (https://trackroom.onrender.com)'})
+    if not isinstance(data, dict):
+        raise APIError('Last.fm 응답을 확인할 수 없어.', 502)
+    if data.get('error'):
+        code = data['error']
+        raise APIError('Last.fm 요청이 너무 많아. 잠시 후 다시 시도해 줘.' if code == 29
+                       else 'Last.fm API 키를 확인해 줘.' if code in (10, 26)
+                       else 'Last.fm에서 앨범 정보를 가져오지 못했어.',
+                       429 if code == 29 else 503 if code in (10, 26) else 502)
+    return data
+
+
+def valid_lastfm_url(url):
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname in ('last.fm','www.last.fm')
+                and parsed.path.startswith('/music/'))
+    except (ValueError, TypeError):
+        return False
+
+
+def search_albums(platform, query):
+    """Return album choices, not creatable song choices."""
+    if platform == 'apple':
+        # Public iTunes storefronts, not the separate Korean Apple Music catalog.
+        for country in ('US', 'JP'):
+            params = urllib.parse.urlencode({'term':query, 'country':country,
+                                             'media':'music', 'entity':'album', 'limit':20})
+            rows = request_json('https://itunes.apple.com/search?' + params).get('results', [])
+            result = []
+            for row in rows:
+                if not isinstance(row, dict) or row.get('collectionType') not in (None,'Album'):
+                    continue
+                album_id = row.get('collectionId')
+                title, artist = row.get('collectionName',''), row.get('artistName','')
+                link = row.get('collectionViewUrl','')
+                if not (str(album_id).isdigit() and title and artist and
+                        urlparse(link).hostname in ('itunes.apple.com','music.apple.com')):
+                    continue
+                result.append({'itemType':'album', 'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
+                               'sourceId':str(album_id), 'title':title[:120], 'artist':artist[:120],
+                               'album':title[:120], 'storeCountry':country,
+                               'musicUrl':link[:500], 'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
+                               'durationMs':None, 'isrc':''})
+            if result:
+                return result[:15]
+        return []
+    if platform == 'lastfm':
+        albums = (lastfm_api('album.search', album=query, limit=20).get('results') or {}).get('albummatches') or {}
+        rows = albums.get('album') or []
+        rows = rows if isinstance(rows, list) else [rows] if isinstance(rows,dict) else []
+        result=[]
+        for row in rows:
+            if not isinstance(row,dict): continue
+            title, artist = row.get('name',''), row.get('artist','')
+            link = row.get('url','')
+            if not (isinstance(title,str) and isinstance(artist,str) and title and artist
+                    and isinstance(link,str) and valid_lastfm_url(link.replace('http://','https://',1))):
+                continue
+            link=link.replace('http://','https://',1)
+            aid = str(row.get('mbid') or '') or ('url-' + hashlib.sha256(link.encode()).hexdigest()[:32])
+            result.append({'itemType':'album','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+                           'sourceId':aid,'title':title[:120],'artist':artist[:120],
+                           'album':title[:120],'musicUrl':link[:500],
+                           'artworkUrl':'','durationMs':None,'isrc':''})
+            if len(result)==15:break
+        return result
+    raise APIError('앨범 검색을 지원하지 않는 플랫폼이야.',422)
+
+
+def fetch_album_tracks(album):
+    """Expand an authenticated search result into selectable *tracks*."""
+    if album.get('sourcePlatform') == 'apple':
+        album_id = str(album.get('sourceId',''))
+        country = album.get('storeCountry','US')
+        if not (album_id.isdigit() and country in ('US','JP')):
+            raise APIError('앨범 정보를 다시 검색해 줘.',422)
+        # Search API rate limit also applies to lookup requests.
+        with APPLE_QUERY_LOCK:
+            delay = max(0.0, APPLE_NEXT_QUERY[0] - time.monotonic())
+            if delay: time.sleep(delay)
+            APPLE_NEXT_QUERY[0] = time.monotonic() + APPLE_MIN_INTERVAL
+        url = 'https://itunes.apple.com/lookup?' + urllib.parse.urlencode({
+            'id':album_id,'entity':'song','country':country,'limit':200})
+        rows = request_json(url,headers={'User-Agent':'TRACKROOM/0.5'},timeout=8).get('results', [])
+        results=[]
+        for row in rows:
+            if not isinstance(row,dict) or row.get('kind') != 'song': continue
+            track_id, link = row.get('trackId'), row.get('trackViewUrl','')
+            if not (str(track_id).isdigit() and isinstance(link,str) and
+                    urlparse(link).hostname in ('itunes.apple.com','music.apple.com')): continue
+            results.append({'itemType':'track','sourcePlatform':'apple','sourceCatalog':'itunes_store',
+                            'sourceId':str(track_id),'title':row.get('trackName','')[:120],
+                            'artist':row.get('artistName','')[:120],
+                            'album':row.get('collectionName','')[:120],
+                            'musicUrl':link[:500],
+                            'artworkUrl':safe_artwork(row.get('artworkUrl100','')) or album.get('artworkUrl',''),
+                            'durationMs':row.get('trackTimeMillis') or None,'isrc':''})
+        return [t for t in results if t['title'] and t['artist']][:80]
+    if album.get('sourcePlatform') == 'lastfm':
+        response = lastfm_api('album.getinfo', artist=album['artist'], album=album['title'], autocorrect=1)
+        tracks = (response.get('album') or {}).get('tracks') or {}
+        rows = tracks.get('track') or []
+        rows = rows if isinstance(rows,list) else [rows] if isinstance(rows,dict) else []
+        results=[]
+        for row in rows:
+            if not isinstance(row,dict): continue
+            title = row.get('name','')
+            raw_artist = row.get('artist') or album['artist']
+            artist = raw_artist.get('name') or raw_artist.get('#text') or album['artist'] if isinstance(raw_artist,dict) else raw_artist
+            link = row.get('url','')
+            if not (isinstance(title,str) and isinstance(artist,str) and isinstance(link,str)):continue
+            link = link.replace('http://','https://',1)
+            if not (title and artist and valid_lastfm_url(link)):continue
+            song_id = str(row.get('mbid') or '') or ('url-' + hashlib.sha256(link.encode()).hexdigest()[:32])
+            results.append({'itemType':'track','sourcePlatform':'lastfm','sourceCatalog':'lastfm',
+                            'sourceId':song_id,'title':title[:120],'artist':artist[:120],
+                            'album':album['title'][:120], 'musicUrl':link[:500],
+                            'artworkUrl':'','durationMs':None,'isrc':''})
+        return results[:80]
+    raise APIError('앨범 검색 결과가 올바르지 않아.',422)
 
 
 def sign_selection(track, user_id):
@@ -933,6 +1097,38 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'user': user_data(updated)})
 
         user = self.require_user() if route.startswith('/api/') else None
+        # Resolve album art progressively after song search. Only a signed
+        # Last.fm result from this user can be resolved, so callers cannot
+        # turn the endpoint into an arbitrary Apple search proxy.
+        if method == 'POST' and route == '/api/catalog/cover':
+            token = self.body().get('selectionToken')
+            selection = verify_selection(token, user['id'])
+            if selection.get('sourcePlatform') != 'lastfm':
+                raise APIError('Last.fm 검색 결과에만 커버 조회를 사용할 수 있어.', 422)
+            search_rate_limit(user['id'])
+            if not selection.get('artworkUrl'):
+                cover = find_itunes_cover(selection['title'], selection['artist'])
+                if cover:
+                    selection['artworkUrl'] = cover['url']
+                    selection['artworkStoreUrl'] = cover['storeUrl']
+                    selection['album'] = cover['album']
+            return self.send_json({
+                'found': bool(selection.get('artworkUrl')),
+                'artworkUrl': selection.get('artworkUrl', ''),
+                'artworkStoreUrl': selection.get('artworkStoreUrl', ''),
+                'album': selection.get('album', ''),
+                'selectionToken': sign_selection(selection, user['id'])
+            })
+
+        if method == 'POST' and route == '/api/catalog/album-tracks':
+            selection = verify_selection(self.body().get('selectionToken'), user['id'])
+            if selection.get('itemType') != 'album':
+                raise APIError('앨범 검색 결과를 먼저 선택해 줘.',422)
+            search_rate_limit(user['id'])
+            tracks = fetch_album_tracks(selection)
+            return self.send_json({'results':[{**song, 'selectionToken':sign_selection(song,user['id'])}
+                                              for song in tracks], 'album':selection['title']})
+
         if method == 'GET' and route == '/api/catalog/search':
             params = parse_qs(parsed.query)
             platform = params.get('platform', [''])[0]
@@ -942,17 +1138,22 @@ class Handler(BaseHTTPRequestHandler):
                 raise APIError('검색어는 2~80자로 입력해 줘.')
             if platform not in ('spotify', 'apple', 'lastfm'):
                 raise APIError('이 플랫폼에서는 아직 사이트 내 검색을 제공하지 않아.', 422)
-            if platform == 'lastfm' and search_mode not in ('track', 'artist'):
+            if search_mode not in ('track','artist','album'):
                 raise APIError('검색 유형이 올바르지 않아.', 422)
             search_rate_limit(user['id'])
             # Keep this cache short and not tied to a Spotify user session.
-            key = (platform, search_mode if platform == 'lastfm' else 'track', query.casefold())
+            key = (platform, search_mode, query.casefold())
             with CACHE_LOCK:
                 cached = SEARCH_CACHE.get(key)
             if cached and cached[0] > time.time():
                 tracks = cached[1]
             else:
-                tracks = search_catalog(platform, query, search_mode) if platform == 'lastfm' else search_catalog(platform, query)
+                if search_mode == 'album':
+                    tracks = search_albums(platform, query)
+                elif platform == 'lastfm':
+                    tracks = search_catalog(platform, query, search_mode)
+                else:
+                    tracks = search_catalog(platform, query if search_mode != 'artist' else query, search_mode)
                 tracks = [t for t in tracks if t.get('sourceId') and t.get('title') and t.get('artist') and t.get('musicUrl')]
                 with CACHE_LOCK:
                     SEARCH_CACHE[key] = (time.time() + 120, tracks[:15])
@@ -1025,6 +1226,8 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'POST' and action == 'songs' and song_id is None:
                 data = self.body()
                 selection = verify_selection(data.get('selectionToken'), user['id'])
+                if selection.get('itemType') == 'album':
+                    raise APIError('앨범 전체가 아니라 수록곡을 선택해 줘.',422)
                 title, artist = selection['title'][:120], selection['artist'][:120]
                 url = selection['musicUrl'][:500]
                 if selection['sourcePlatform'] == 'lastfm' and not selection.get('artworkUrl'):

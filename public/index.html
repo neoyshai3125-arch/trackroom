@@ -64,8 +64,16 @@
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
           <div class="section-heading canvas-heading">
-            <div><div class="mini-heading">THE DISCOVERY FIELD</div><h2>우리의 음악 공간 <span id="songTotal">0</span></h2><p class="canvas-caption">먼저 눈에 띄는 커버부터 둘러봐. 정해진 순서는 없어.</p></div>
-            <button class="btn btn-primary add-track-open" type="button" id="openAddPanel">+ 음악 추가</button>
+            <div><div class="mini-heading">THE DISCOVERY FIELD</div><h2>우리의 음악 공간 <span id="songTotal">0</span></h2><p class="canvas-caption">마음에 드는 버블을 찾아봐. 정렬 기준은 중앙에 보이는 곡의 우선순위만 바꿔.</p></div>
+            <div class="canvas-toolbar">
+              <label class="canvas-sort-wrap" for="canvasSort">버블 배치 기준
+                <select id="canvasSort" class="canvas-sort-select" aria-label="음악 버블 정렬 기준">
+                  <option value="recent">최신순</option>
+                  <option value="popular">인기순 · 좋아요</option>
+                </select>
+              </label>
+              <button class="btn btn-primary add-track-open" type="button" id="openAddPanel">+ 음악 추가</button>
+            </div>
           </div>
           <div id="bubbleCanvas" class="bubble-canvas" tabindex="0" role="region" aria-label="음악 버블 캔버스. 드래그하여 이동, 마우스 휠 또는 확대 축소 버튼으로 탐색, 버블을 눌러 상세 보기">
             <div class="canvas-backdrop" aria-hidden="true"></div>
@@ -95,12 +103,12 @@
           <h2>이 노래,<br/>너도 들어봐.</h2>
           <p class="panel-intro">Last.fm 또는 Apple/iTunes에서 검색된 음악만 등록할 수 있어. 곡 정보에 저장된 앨범 커버를 버블에 표시해.</p>
           <form id="catalogSearchForm" class="catalog-search-form" role="search">
-            <div class="catalog-provider"><span class="catalog-provider-name">✳ 음악 데이터베이스 선택</span><a id="catalogSourceLink" href="https://www.last.fm" target="_blank" rel="noopener noreferrer">Powered by Last.fm ↗</a></div>
+            <div class="catalog-provider"><span class="catalog-provider-name">✳ 음악 검색 · 기본 Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
             <label class="field-label" for="catalogPlatform">검색 데이터베이스</label>
-            <select id="catalogPlatform" class="platform-select"><option value="lastfm">Last.fm</option><option value="apple">Apple / iTunes 공개 카탈로그</option></select>
-            <div id="catalogHint" class="catalog-hint" role="status">노래 제목이나 아티스트를 입력해 줘. 음원 재생·다운로드는 제공하지 않아.</div>
-            <label class="field-label" for="lastfmSearchMode">검색 기준</label>
-            <select id="lastfmSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트로 검색</option></select>
+            <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
+            <div id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</div>
+            <label class="field-label" for="catalogSearchMode">검색 기준</label>
+            <select id="catalogSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트로 검색</option><option value="album">앨범명으로 검색 → 수록곡 선택</option></select>
             <label class="field-label" for="songQuery">음악 검색 <span class="required">*</span></label>
             <div class="catalog-search-row">
               <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목 또는 아티스트" autocomplete="off" required />
@@ -108,6 +116,7 @@
             </div>
           </form>
           <div id="searchStatus" class="search-status" aria-live="polite">검색 결과에서 곡을 선택하면 추천할 수 있어.</div>
+          <button type="button" id="albumBack" class="btn btn-outline album-back hidden">← 앨범 검색 결과로 돌아가기</button>
           <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원"></div>
           <form id="addSongForm">
             <div id="selectedTrack" class="selected-track hidden"></div>

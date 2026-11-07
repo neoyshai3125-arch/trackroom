@@ -112,3 +112,11 @@ select.platform-select{width:100%;background:#121814;color:#f0f3ed;border:1px so
 .bubble-link-apple{color:#f2dfb0}
 .canvas-covers{font-size:19px!important}
 .canvas-covers:disabled{opacity:.4;cursor:wait}
+
+/* TRACKROOM v5.5: spatial priority controls + album drill-down */
+.canvas-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end}
+.canvas-sort-wrap{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#bac7ba;min-width:128px}
+.canvas-sort-select{appearance:auto;border:1px solid #56654e;border-radius:10px;background:#1a241d;color:#e8f4df;padding:11px 10px;font:inherit;min-width:130px;min-height:43px;cursor:pointer}
+.canvas-sort-select:focus-visible{outline:2px solid #c6f16b;outline-offset:2px}
+.album-back{width:100%;margin:8px 0 12px;padding:11px 14px;font-size:12px}
+@media(max-width:720px){.canvas-heading{flex-wrap:wrap}.canvas-toolbar{width:100%;justify-content:space-between}.canvas-sort-wrap{flex:1}.canvas-toolbar .add-track-open{align-self:flex-end}}
