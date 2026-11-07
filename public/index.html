@@ -73,19 +73,37 @@
           <div class="panel-decor" aria-hidden="true">✳</div>
           <div class="mini-heading">DROP A TRACK</div>
           <h2>이 노래,<br/>너도 들어봐.</h2>
-          <p class="panel-intro">내가 좋아하는 곡과 추천하는 이유를 공유해줘.</p>
+          <p class="panel-intro">플랫폼에서 곡을 검색해 선택해 줘. 임의의 제목으로는 등록할 수 없어.</p>
+          <form id="catalogSearchForm" class="catalog-search-form" role="search">
+            <label class="field-label" for="searchPlatform">검색할 음원 플랫폼</label>
+            <select id="searchPlatform" class="platform-select" aria-describedby="catalogHint">
+              <option value="spotify">Spotify (API 연결 필요)</option>
+              <option value="apple" selected>Apple / iTunes 카탈로그</option>
+              <option value="melon">멜론 (검색 미지원)</option>
+              <option value="genie">지니뮤직 (검색 미지원)</option>
+              <option value="flo">FLO (검색 미지원)</option>
+              <option value="bugs">벅스 (검색 미지원)</option>
+              <option value="youtube">YouTube Music (검색 미지원)</option>
+            </select>
+            <div id="catalogHint" class="catalog-hint" role="status">아티스트나 곡 제목으로 검색해 줘.</div>
+            <button id="appleFallback" type="button" class="catalog-fallback hidden">Apple/iTunes 공개 카탈로그로 검색하기 ↗</button>
+            <label class="field-label" for="songQuery">음악 검색 <span class="required">*</span></label>
+            <div class="catalog-search-row">
+              <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목 또는 아티스트" autocomplete="off" required />
+              <button class="btn btn-outline catalog-search-button" type="submit">검색</button>
+            </div>
+          </form>
+          <div id="searchStatus" class="search-status" aria-live="polite">검색 결과에서 실제 음원을 선택하면 추천할 수 있어.</div>
+          <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원"></div>
           <form id="addSongForm">
-            <label class="field-label" for="songTitle">노래 제목 <span class="required">*</span></label>
-            <input id="songTitle" maxlength="120" placeholder="곡 제목" required />
-            <label class="field-label" for="artist">아티스트 <span class="required">*</span></label>
-            <input id="artist" maxlength="120" placeholder="가수 / 아티스트" required />
-            <label class="field-label" for="musicUrl">음원 링크 <span class="optional">선택</span></label>
-            <input id="musicUrl" maxlength="500" type="url" placeholder="Spotify, 멜론, YouTube 등" />
+            <div id="selectedTrack" class="selected-track hidden"></div>
+            <div id="songFormExtra" class="hidden">
             <label class="field-label" for="note">추천 한마디 <span class="optional">선택</span></label>
             <textarea id="note" maxlength="500" rows="3" placeholder="이 곡을 추천하는 이유, 듣기 좋은 순간..."></textarea>
             <div class="favorite-title">좋아하는 구간 <span class="optional">선택 · 재생 연동은 추후 지원</span></div>
             <div class="time-fields"><div><label class="field-label" for="startTime">시작</label><input id="startTime" placeholder="1:20" inputmode="text" /></div><span class="range-dash">—</span><div><label class="field-label" for="endTime">끝</label><input id="endTime" placeholder="1:50" inputmode="text" /></div></div>
-            <button class="btn btn-primary btn-wide add-submit" type="submit">+ 추천곡 등록하기</button>
+            <button id="submitSong" class="btn btn-primary btn-wide add-submit" type="submit" disabled>+ 선택한 곡 등록하기</button>
+            </div>
           </form>
           <div class="panel-foot">NO AUDIO UPLOADS. JUST GOOD TASTE. ☺</div>
         </aside>

@@ -5,6 +5,7 @@ import json
 import socket
 import tempfile
 import threading
+from unittest.mock import patch
 import unittest
 import urllib.error
 import urllib.request
@@ -74,12 +75,29 @@ class TestAuthAndRooms(unittest.TestCase):
         room = a.request('POST', '/api/rooms', {'name': '오노추방'}, 201)['code']
         self.assertEqual(b.request('GET', f'/api/rooms/{room}', expected=403)['error'], '방에 먼저 참여해 주세요.')
         b.request('POST', f'/api/rooms/{room}/join', {})
+        # A user can't invent songs or forge catalog metadata.
+        self.assertIn('검색', a.request('POST', f'/api/rooms/{room}/songs', {
+            'title':'가짜노래', 'artist':'가짜가수'}, 400)['error'])
+        verified = {'sourcePlatform':'apple', 'sourceCatalog':'itunes_store',
+            'sourceId':'123456', 'title':'공식 노래', 'artist':'실제 아티스트',
+            'album':'앨범', 'musicUrl':'https://itunes.apple.com/kr/album/test/id123456?i=123456',
+            'artworkUrl':'https://is1-ssl.mzstatic.com/image/test.jpg',
+            'durationMs':180000, 'isrc':''}
+        with patch.object(app, 'search_catalog', return_value=[verified]) as stub:
+            result = a.request('GET', '/api/catalog/search?platform=apple&q=%EA%B3%B5%EC%8B%9D')
+        stub.assert_called_once()
+        selected = result['results'][0]
+        self.assertEqual(selected['sourceId'], '123456')
         a.request('POST', f'/api/rooms/{room}/songs', {
-            'title': '노래', 'artist': '가수', 'startSeconds': 80, 'endSeconds': 110,
+            'selectionToken': selected['selectionToken'],
+            'title':'임의로_조작한_제목', 'artist':'조작한_가수',
+            'startSeconds': 80, 'endSeconds': 110,
             'userId': b.request('GET', '/api/auth/me')['user']['id'], 'nickname': '위조'
         }, 201)
         songs = b.request('GET', f'/api/rooms/{room}')['songs']
         self.assertEqual(songs[0]['nickname'], '첫청취자')
+        self.assertEqual(songs[0]['title'], '공식 노래')
+        self.assertEqual(songs[0]['sourceId'], '123456')
         self.assertEqual(songs[0]['userId'], user['id'])
         song_id = songs[0]['id']
         self.assertEqual(b.request('DELETE', f'/api/rooms/{room}/songs/{song_id}', {}, 403)['error'],
@@ -110,6 +128,30 @@ class TestAuthAndRooms(unittest.TestCase):
             'username': 'validuser', 'password': 'abc123456789', 'nickname': 'X', 'platform': 'fake'
         }, 400)['error'])
         self.assertEqual(a.request('POST', '/api/rooms', {'name': 'x'}, 401)['error'], '로그인이 필요합니다.')
+
+    def test_search_requires_login_and_supported_platform(self):
+        anon = Client(self.base)
+        self.assertEqual(anon.request('GET', '/api/catalog/search?platform=apple&q=hello', expected=401)['error'], '로그인이 필요합니다.')
+        logged = Client(self.base)
+        logged.request('POST', '/api/auth/register', {
+            'username': 'music_searcher', 'password': 'testingpassword123',
+            'nickname': '음악탐색', 'platform': 'melon'
+        }, 201)
+        self.assertEqual(logged.request('GET', '/api/catalog/search?platform=melon&q=hello', expected=422)['error'],
+                         '이 플랫폼에서는 아직 사이트 내 검색을 제공하지 않아.')
+        fake = {'sourcePlatform':'apple','sourceCatalog':'itunes_store','sourceId':'x123',
+                'title':'진짜 음악', 'artist':'진짜 가수','musicUrl':'https://itunes.apple.com/kr/test'}
+        with patch.object(app,'search_catalog',return_value=[fake]):
+            chosen = logged.request('GET','/api/catalog/search?platform=apple&q=%EC%9D%8C%EC%95%85')['results'][0]
+        room = logged.request('POST','/api/rooms',{'name':'검색 검증'},201)['code']
+        token = chosen['selectionToken']
+        self.assertEqual(logged.request('POST',f'/api/rooms/{room}/songs',{'selectionToken':token[:-3]+'abc'},400)['error'][:3], '선택한')
+        # The track selection belongs to the user who performed the catalog search.
+        other = Client(self.base)
+        other.request('POST','/api/auth/register',{'username':'other_searcher','password':'password000000',
+                                               'nickname':'다른사람','platform':'apple'},201)
+        other.request('POST',f'/api/rooms/{room}/join',{})
+        self.assertEqual(other.request('POST',f'/api/rooms/{room}/songs',{'selectionToken':token},400)['error'][:5], '음원 선택')
 
 
 if __name__ == '__main__':

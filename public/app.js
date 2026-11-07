@@ -2,6 +2,9 @@ const $ = (id) => document.getElementById(id);
 const state = { roomCode: null, room: null, songs: [], sort: 'recent', user: null, pendingInvite: null, authMode: 'login' };
 let refreshTimer = null;
 let toastTimer = null;
+let selectedTrack = null;
+let catalogResults = [];
+let searchCounter = 0;
 
 function toast(message, error = false) {
   const el = $('toast');
@@ -57,6 +60,7 @@ function renderAccount() {
 async function completeLogin(user) {
   state.user = user;
   renderAccount();
+  preferSearchPlatform();
   hideAuth();
   if (state.pendingInvite) {
     const code = state.pendingInvite;
@@ -91,6 +95,7 @@ async function submitProfile(event) {
     const data = await api('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({nickname: $('profileNickname').value.trim(), platform: $('profilePlatform').value})});
     state.user = data.user;
     renderAccount();
+    preferSearchPlatform();
     hideProfile();
     await refreshRoom();
     toast('프로필을 저장했어!');
@@ -109,6 +114,7 @@ async function logout() {
 }
 function setBusy(form, busy) {
   [...form.querySelectorAll('button, input, textarea')].forEach(x => x.disabled = busy);
+  if (form.id === 'addSongForm') $('submitSong').disabled = busy || !selectedTrack;
 }
 function showLanding() {
   state.roomCode = null;
@@ -195,10 +201,15 @@ function renderSongs() {
   $('songList').innerHTML = list.map(song => {
     const owned = song.userId === state.user?.id;
     const range = song.startSeconds !== null ? `<span class="song-timerange">♫ ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – '+timeLabel(song.endSeconds) : '부터'}</span>` : '';
-    const link = song.musicUrl ? `<a href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer" class="song-link">${escaped(sourceLabel(song.musicUrl))}에서 보기 ↗</a>` : '';
+    const provider = song.sourceCatalog === 'itunes_store' ? 'iTunes Store' :
+      (PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
+    const link = song.musicUrl ? `<a href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer" class="song-link">${escaped(provider)}에서 보기 ↗</a>` : '';
+    const cover = song.artworkUrl && /^https:\/\//i.test(song.artworkUrl)
+      ? `<div class="song-cover"><img src="${escaped(song.artworkUrl)}" alt="" loading="lazy" /></div>`
+      : `<div class="song-art" style="--art:${artGradient(song.title)}" aria-hidden="true"></div>`;
     return `<article class="song-card" data-id="${song.id}">
       <div class="song-card-top">
-        <div class="song-art" style="--art:${artGradient(song.title)}" aria-hidden="true"></div>
+        ${cover}
         <div class="song-info"><h3>${escaped(song.title)}</h3><p>${escaped(song.artist)}</p><div class="song-by"><strong>${escaped(song.nickname)}</strong>의 추천 · ${new Date(song.createdAt).toLocaleDateString('ko-KR',{month:'short',day:'numeric'})}</div></div>
       </div>
       ${song.note ? `<div class="song-note">“${escaped(song.note)}”</div>` : ''}
@@ -237,21 +248,111 @@ async function joinRoom(event) {
   } catch(e) { toast(e.message,true); }
   finally { setBusy(form,false); }
 }
+function catalogLabel(catalog) {
+  return ({ spotify:'Spotify', apple_music:'Apple Music', itunes_store:'iTunes Store' })[catalog] || '음원 카탈로그';
+}
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+function catalogHint() {
+  const p = $('searchPlatform').value;
+  const hints = {
+    spotify: 'Spotify API 키를 서버에 설정해야 검색할 수 있어. 개발 모드는 Premium 및 사용자 수 제한이 있어.',
+    apple: 'Apple Music 토큰이 없으면 iTunes Store 공개 카탈로그를 검색해. Apple Music 재생 가능 여부까지 보장하지는 않아.',
+    melon: '멜론의 공식 일반 개발자용 곡 검색 API는 연동하지 않았어. Apple / iTunes 검색을 대신 선택할 수 있어.',
+    genie: '지니뮤직의 공식 곡 검색 연동은 아직 지원하지 않아.',
+    flo: 'FLO의 공식 곡 검색 연동은 아직 지원하지 않아.',
+    bugs: '벅스의 공식 곡 검색 연동은 아직 지원하지 않아.',
+    youtube: 'YouTube Music의 공식 곡 검색 연동은 아직 지원하지 않아.'
+  };
+  $('catalogHint').textContent = hints[p] || '검색 플랫폼을 선택해 줘.';
+  $('catalogHint').classList.toggle('catalog-warning', !['spotify','apple'].includes(p));
+  $('appleFallback').classList.toggle('hidden', ['spotify','apple'].includes(p));
+  $('catalogSearchForm').querySelector('[type="submit"]').disabled = !['spotify','apple'].includes(p);
+}
+function preferSearchPlatform() {
+  const p = state.user?.platform;
+  if (p && [...$('searchPlatform').options].some(o => o.value === p)) $('searchPlatform').value = p;
+  catalogHint();
+}
+function clearSelected() {
+  selectedTrack = null;
+  $('selectedTrack').innerHTML = '';
+  $('selectedTrack').classList.add('hidden');
+  $('songFormExtra').classList.add('hidden');
+  $('submitSong').disabled = true;
+}
+function renderSelected(track) {
+  const art = track.artworkUrl ? `<img src="${escaped(track.artworkUrl)}" alt="앨범 커버" />` : '<span class="no-art">♫</span>';
+  $('selectedTrack').innerHTML = `<div class="chosen-cover">${art}</div><div class="chosen-info"><small>✓ 선택된 음원 · ${escaped(catalogLabel(track.sourceCatalog))}</small><strong>${escaped(track.title)}</strong><span>${escaped(track.artist)}</span><a href="${escaped(track.musicUrl)}" target="_blank" rel="noopener noreferrer">원본 음원 확인 ↗</a></div><button class="chosen-clear" type="button" id="clearTrack" aria-label="선택 취소">✕</button>`;
+  $('selectedTrack').classList.remove('hidden');
+  $('songFormExtra').classList.remove('hidden');
+  $('submitSong').disabled = false;
+  $('clearTrack').addEventListener('click', clearSelected);
+  $('selectedTrack').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function searchSongs(event) {
+  event.preventDefault();
+  const platform = $('searchPlatform').value;
+  const q = $('songQuery').value.trim();
+  const seq = ++searchCounter;
+  clearSelected();
+  catalogResults = [];
+  $('catalogResults').innerHTML = '';
+  if (q.length < 2) return toast('검색어를 2글자 이상 입력해 줘.', true);
+  if (!['spotify','apple'].includes(platform)) return toast('이 플랫폼은 아직 공식 검색을 지원하지 않아.',true);
+  const button = $('catalogSearchForm').querySelector('button[type="submit"]');
+  button.disabled = true;
+  $('searchStatus').textContent = '음원을 검색하고 있어…';
+  try {
+    const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q})}`);
+    if (seq !== searchCounter) return;
+    catalogResults = data.results || [];
+    $('searchStatus').textContent = catalogResults.length ? `${catalogResults.length}곡 발견 · 곡을 눌러 선택해 줘.` : '검색된 곡이 없어. 다른 제목이나 아티스트로 검색해 봐.';
+    $('catalogResults').innerHTML = catalogResults.map((song, i) => {
+      const art = song.artworkUrl ? `<img src="${escaped(song.artworkUrl)}" loading="lazy" alt="" />` : '<span class="no-art">♫</span>';
+      return `<button type="button" class="catalog-result" data-index="${i}" role="listitem"><span class="catalog-art">${art}</span><span class="catalog-result-info"><strong>${escaped(song.title)}</strong><span>${escaped(song.artist)}</span><small>${escaped(catalogLabel(song.sourceCatalog))} · ${escaped(song.album)} ${formatDuration(song.durationMs)}</small></span><span class="catalog-choose">선택 ↗</span></button>`;
+    }).join('');
+  } catch (error) {
+    if (seq !== searchCounter) return;
+    $('searchStatus').textContent = error.message;
+    toast(error.message, true);
+  } finally {
+    if (seq === searchCounter) catalogHint();
+  }
+}
+function selectSearchResult(event) {
+  const b = event.target.closest('[data-index]');
+  if (!b) return;
+  const track = catalogResults[Number(b.dataset.index)];
+  if (!track?.selectionToken) return;
+  selectedTrack = track;
+  renderSelected(track);
+  [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el => el.classList.toggle('is-selected', el === b));
+}
 async function addSong(event) {
   event.preventDefault();
   const form = event.currentTarget;
   try {
+    if (!selectedTrack?.selectionToken) throw new Error('검색 결과에서 음원을 선택해 줘.');
     const startSeconds = parseTime($('startTime').value);
     const endSeconds = parseTime($('endTime').value);
     if (endSeconds !== null && startSeconds === null) throw new Error('시작 구간을 먼저 입력해 주세요.');
     if (endSeconds !== null && endSeconds <= startSeconds) throw new Error('끝 구간은 시작보다 뒤여야 해.');
     setBusy(form,true);
     await api(`/api/rooms/${state.roomCode}/songs`, {method:'POST',body:JSON.stringify({
-      title:$('songTitle').value.trim(), artist:$('artist').value.trim(),
-      note:$('note').value, musicUrl:$('musicUrl').value.trim(),
+      selectionToken:selectedTrack.selectionToken,
+      note:$('note').value,
       startSeconds, endSeconds
     })});
     form.reset();
+    clearSelected();
+    catalogResults = [];
+    $('catalogResults').innerHTML = '';
+    $('songQuery').value = '';
+    $('searchStatus').textContent = '다른 곡을 검색해 추천할 수 있어.';
     await refreshRoom();
     toast('추천곡이 등록됐어!');
     if (window.innerWidth < 721) $('songList').scrollIntoView({behavior:'smooth',block:'start'});
@@ -310,15 +411,36 @@ async function init() {
   $('createForm').addEventListener('submit',createRoom);
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
+  $('catalogSearchForm').addEventListener('submit', searchSongs);
+  $('appleFallback').addEventListener('click', () => {
+    $('searchPlatform').value = 'apple';
+    $('searchPlatform').dispatchEvent(new Event('change'));
+    $('songQuery').focus();
+  });
+  $('catalogResults').addEventListener('click', selectSearchResult);
+  $('searchPlatform').addEventListener('change', () => {
+    ++searchCounter;
+    clearSelected(); catalogResults = []; $('catalogResults').innerHTML = '';
+    $('searchStatus').textContent = '검색 플랫폼을 선택했어. 음원을 검색해 줘.';
+    catalogHint();
+  });
+  $('songQuery').addEventListener('input', () => {
+    ++searchCounter;
+    clearSelected(); catalogResults = []; $('catalogResults').innerHTML = '';
+    $('searchStatus').textContent = '검색 버튼을 눌러 음원을 찾아 줘.';
+  });
+
   $('songList').addEventListener('click',onSongAction);
   $('shareBtn').addEventListener('click',copyShare);
   $('sortRecent').addEventListener('click',()=>setSort('recent'));
   $('sortLikes').addEventListener('click',()=>setSort('likes'));
   renderAccount();
+  catalogHint();
   try {
     const data = await api('/api/auth/me');
     state.user = data.user;
     renderAccount();
+    preferSearchPlatform();
   } catch { /* Not logged in yet */ }
   const invite = new URL(location.href).searchParams.get('room');
   if (invite) {

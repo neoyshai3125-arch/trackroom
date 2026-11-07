@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """TRACKROOM: music recommendations, password login and stored profile (Python stdlib)."""
 import hashlib
+import base64
+import urllib.request
+import urllib.error
+import urllib.parse
 import hmac
 import json
 import os
@@ -15,7 +19,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 ROOT = Path(__file__).resolve().parent
 PUBLIC = ROOT / 'public'
@@ -28,6 +32,14 @@ PLATFORMS = ('spotify', 'apple', 'melon', 'genie', 'flo', 'bugs', 'youtube', 'ot
 SESSION_AGE = 60 * 60 * 24 * 30
 ATTEMPTS = {}
 ATTEMPTS_LOCK = threading.Lock()
+CATALOG_SECRET = os.environ.get('TRACKROOM_SELECTION_SECRET', '').encode('utf-8') or secrets.token_bytes(32)
+SEARCH_REQUESTS = {}
+SEARCH_LOCK = threading.Lock()
+SPOTIFY_TOKEN = {'token': '', 'until': 0}
+SPOTIFY_LOCK = threading.Lock()
+SEARCH_CACHE = {}
+CACHE_LOCK = threading.Lock()
+
 
 
 def now():
@@ -116,10 +128,24 @@ def init_db():
                 if statement.strip():
                     conn.execute(statement)
             # Public API roles must not read/write password hashes or session records.
+            for column, kind in (
+                ('source_platform', 'TEXT'), ('source_id', 'TEXT'),
+                ('source_catalog', 'TEXT'), ('artwork_url', 'TEXT'),
+                ('album_name', 'TEXT'), ('duration_ms', 'INTEGER'), ('isrc', 'TEXT')
+            ):
+                conn.execute(f'ALTER TABLE songs ADD COLUMN IF NOT EXISTS {column} {kind}')
             for table in ('users', 'sessions', 'rooms', 'members', 'songs', 'likes'):
                 conn.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY')
         else:
             conn.executescript(schema)
+            columns = {row['name'] for row in conn.execute('PRAGMA table_info(songs)').fetchall()}
+            for column, kind in (
+                ('source_platform', 'TEXT'), ('source_id', 'TEXT'),
+                ('source_catalog', 'TEXT'), ('artwork_url', 'TEXT'),
+                ('album_name', 'TEXT'), ('duration_ms', 'INTEGER'), ('isrc', 'TEXT')
+            ):
+                if column not in columns:
+                    conn.execute(f'ALTER TABLE songs ADD COLUMN {column} {kind}')
 
 
 class APIError(Exception):
@@ -209,6 +235,10 @@ def list_room(conn, code, user_id):
             'id': s['id'], 'title': s['title'], 'artist': s['artist'],
             'nickname': s['nickname'], 'userId': s['user_id'],
             'musicUrl': s['music_url'], 'note': s['note'],
+            'sourcePlatform': s['source_platform'], 'sourceCatalog': s['source_catalog'],
+            'sourceId': s['source_id'], 'album': s['album_name'],
+            'artworkUrl': s['artwork_url'], 'durationMs': s['duration_ms'],
+            'isrc': s['isrc'],
             'startSeconds': s['start_seconds'], 'endSeconds': s['end_seconds'],
             'createdAt': s['created_at'], 'likeCount': s['like_count'], 'liked': bool(s['liked'])
         } for s in song_rows]
@@ -227,6 +257,158 @@ def check_rate_limit(ip):
             for key in list(ATTEMPTS)[:500]:
                 if all(current - t > 600 for t in ATTEMPTS[key]):
                     del ATTEMPTS[key]
+
+
+
+def safe_artwork(url):
+    """Only serve cover URLs sourced from known catalog CDNs."""
+    try:
+        u = urlparse(url)
+        return (url if u.scheme == 'https' and
+                (u.hostname == 'i.scdn.co' or u.hostname == 'mosaic.scdn.co' or
+                 (u.hostname or '').endswith('.mzstatic.com')) else '')
+    except (TypeError, ValueError):
+        return ''
+
+
+def request_json(url, headers=None, data=None, method=None):
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            raise APIError('음원 검색 요청이 많아. 잠시 후 다시 검색해 줘.', 429) from exc
+        if exc.code in (401, 403):
+            raise APIError('음원 플랫폼 API 인증 또는 이용 권한을 확인해 줘.', 503) from exc
+        raise APIError('음원 플랫폼에서 결과를 불러오지 못했어.', 502) from exc
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        raise APIError('음원 플랫폼에 연결할 수 없어. 다시 시도해 줘.', 502) from exc
+
+
+def spotify_access_token():
+    client_id, secret = os.environ.get('SPOTIFY_CLIENT_ID'), os.environ.get('SPOTIFY_CLIENT_SECRET')
+    if not client_id or not secret:
+        raise APIError('Spotify 검색은 아직 설정되지 않았어. 관리자에게 Spotify API 연결을 요청해 줘.', 503)
+    with SPOTIFY_LOCK:
+        if time.time() < SPOTIFY_TOKEN['until'] and SPOTIFY_TOKEN['token']:
+            return SPOTIFY_TOKEN['token']
+        auth = base64.b64encode(f'{client_id}:{secret}'.encode()).decode()
+        obj = request_json('https://accounts.spotify.com/api/token',
+                           headers={'Authorization': 'Basic ' + auth,
+                                    'Content-Type': 'application/x-www-form-urlencoded'},
+                           data=b'grant_type=client_credentials', method='POST')
+        token = obj.get('access_token')
+        if not token:
+            raise APIError('Spotify 인증 정보를 확인해 줘.', 503)
+        SPOTIFY_TOKEN.update(token=token, until=time.time() + int(obj.get('expires_in', 3600)) - 90)
+        return token
+
+
+def search_catalog(platform, query):
+    """Search the requested provider; never fall back silently to another catalog."""
+    if platform == 'spotify':
+        token = spotify_access_token()
+        url = 'https://api.spotify.com/v1/search?' + urllib.parse.urlencode({
+            'q': query, 'type': 'track', 'market': 'KR', 'limit': 10})
+        obj = request_json(url, {'Authorization': 'Bearer ' + token})
+        tracks = obj.get('tracks', {}).get('items', [])
+        results = []
+        for t in tracks:
+            item_url = (t.get('external_urls') or {}).get('spotify', '')
+            if not re.fullmatch(r'https://open\.spotify\.com/track/[a-zA-Z0-9]{15,30}(?:\?.*)?', item_url):
+                continue
+            images = (t.get('album') or {}).get('images') or []
+            results.append({'sourcePlatform': 'spotify', 'sourceCatalog': 'spotify',
+                'sourceId': str(t.get('id','')), 'title': t.get('name',''),
+                'artist': ', '.join(a.get('name', '') for a in t.get('artists', [])),
+                'album': (t.get('album') or {}).get('name', ''),
+                'musicUrl': item_url, 'artworkUrl': safe_artwork(images[0].get('url', '')) if images else '',
+                'durationMs': t.get('duration_ms') or None,
+                'isrc': (t.get('external_ids') or {}).get('isrc', '')})
+        return results
+    if platform == 'apple':
+        developer_token = os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN', '').strip()
+        if developer_token:
+            url = 'https://api.music.apple.com/v1/catalog/kr/search?' + urllib.parse.urlencode({
+                'term': query, 'types': 'songs', 'limit': 15})
+            obj = request_json(url, {'Authorization': 'Bearer ' + developer_token})
+            result = []
+            for t in obj.get('results', {}).get('songs', {}).get('data', []):
+                attr = t.get('attributes') or {}
+                artwork_template = (attr.get('artwork') or {}).get('url', '')
+                art = artwork_template.replace('{w}', '300').replace('{h}', '300')
+                item_url = attr.get('url', '')
+                if urlparse(item_url).hostname != 'music.apple.com':
+                    continue
+                result.append({'sourcePlatform':'apple','sourceCatalog':'apple_music',
+                    'sourceId':str(t.get('id', '')), 'title':attr.get('name',''),
+                    'artist':attr.get('artistName',''), 'album':attr.get('albumName', ''),
+                    'musicUrl':item_url, 'artworkUrl':safe_artwork(art),
+                    'durationMs':attr.get('durationInMillis') or None,
+                    'isrc':attr.get('isrc', '')})
+            return result
+        # Public iTunes Store metadata is not equivalent to Apple Music streaming availability.
+        url = 'https://itunes.apple.com/search?' + urllib.parse.urlencode({
+            'term': query, 'media': 'music', 'entity': 'song', 'country': 'KR', 'limit': 15})
+        obj = request_json(url)
+        result = []
+        for t in obj.get('results', []):
+            if t.get('kind') != 'song' or not t.get('trackId'):
+                continue
+            link = t.get('trackViewUrl', '')
+            if urlparse(link).hostname not in ('music.apple.com', 'itunes.apple.com'):
+                continue
+            result.append({'sourcePlatform': 'apple', 'sourceCatalog': 'itunes_store',
+                'sourceId': str(t['trackId']), 'title': t.get('trackName',''),
+                'artist': t.get('artistName',''), 'album': t.get('collectionName',''),
+                'musicUrl': link, 'artworkUrl': safe_artwork(t.get('artworkUrl100','')),
+                'durationMs': t.get('trackTimeMillis') or None,
+                'isrc': ''})
+        return result
+    raise APIError('이 음원 플랫폼은 공식 사이트 내 검색을 아직 지원하지 않아. 다른 검색 제공원을 선택해 줘.', 422)
+
+
+def sign_selection(track, user_id):
+    selected = dict(track)
+    selected['exp'] = int(time.time()) + 15 * 60
+    selected['uid'] = user_id
+    payload = base64.urlsafe_b64encode(json.dumps(selected, ensure_ascii=False, separators=(',', ':')).encode()).rstrip(b'=')
+    digest = hmac.new(CATALOG_SECRET, payload, hashlib.sha256).hexdigest()
+    return payload.decode('ascii') + '.' + digest
+
+
+def verify_selection(token, user_id):
+    if not isinstance(token, str) or not 10 < len(token) < 6000 or token.count('.') != 1:
+        raise APIError('검색 결과에서 실제 음원을 선택해 줘.')
+    payload, signature = token.split('.', 1)
+    computed = hmac.new(CATALOG_SECRET, payload.encode('ascii', errors='ignore'), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, computed):
+        raise APIError('선택한 음원 정보가 유효하지 않아. 다시 검색해 줘.')
+    try:
+        song = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+    except (ValueError, TypeError):
+        raise APIError('선택한 음원 정보가 올바르지 않아.')
+    if song.get('uid') != user_id or song.get('exp', 0) < time.time():
+        raise APIError('음원 선택이 만료됐어. 다시 검색해 줘.')
+    if song.get('sourcePlatform') not in ('spotify', 'apple') or not song.get('sourceId'):
+        raise APIError('선택한 음악 정보를 확인할 수 없어.')
+    if not song.get('title') or not song.get('artist') or not song.get('musicUrl'):
+        raise APIError('선택한 음악 정보를 확인할 수 없어.')
+    return song
+
+
+def search_rate_limit(user_id):
+    with SEARCH_LOCK:
+        t = time.time()
+        recent = [when for when in SEARCH_REQUESTS.get(user_id, ()) if t - when < 60]
+        if len(recent) >= 25:
+            raise APIError('검색을 너무 자주 했어. 잠시 후 다시 시도해 줘.', 429)
+        recent.append(t)
+        SEARCH_REQUESTS[user_id] = recent
+        if len(SEARCH_REQUESTS) > 2500:
+            SEARCH_REQUESTS.clear()
+
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -380,6 +562,35 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'user': user_data(updated)})
 
         user = self.require_user() if route.startswith('/api/') else None
+        if method == 'GET' and route == '/api/catalog/search':
+            params = parse_qs(parsed.query)
+            platform = params.get('platform', [''])[0]
+            query = params.get('q', [''])[0].strip()
+            if not 2 <= len(query) <= 80:
+                raise APIError('검색어는 2~80자로 입력해 줘.')
+            if platform not in ('spotify', 'apple'):
+                raise APIError('이 플랫폼에서는 아직 사이트 내 검색을 제공하지 않아.', 422)
+            search_rate_limit(user['id'])
+            # Keep this cache short and not tied to a Spotify user session.
+            key = (platform, query.casefold())
+            with CACHE_LOCK:
+                cached = SEARCH_CACHE.get(key)
+            if cached and cached[0] > time.time():
+                tracks = cached[1]
+            else:
+                tracks = search_catalog(platform, query)
+                tracks = [t for t in tracks if t.get('sourceId') and t.get('title') and t.get('artist') and t.get('musicUrl')]
+                with CACHE_LOCK:
+                    SEARCH_CACHE[key] = (time.time() + 120, tracks[:15])
+                    if len(SEARCH_CACHE) > 200:
+                        SEARCH_CACHE.clear()
+            response = []
+            for song in tracks[:15]:
+                response.append({**song, 'selectionToken': sign_selection(song, user['id'])})
+            return self.send_json({'results': response, 'catalog':
+                response[0]['sourceCatalog'] if response else
+                ('apple_music' if platform == 'apple' and os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN') else
+                 'itunes_store' if platform == 'apple' else 'spotify')})
         if method == 'POST' and route == '/api/rooms':
             name = required_string(self.body(), 'name', 40)
             with db() as conn:
@@ -409,14 +620,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'ok': True})
             if method == 'POST' and action == 'songs' and song_id is None:
                 data = self.body()
-                title = required_string(data, 'title', 120)
-                artist = required_string(data, 'artist', 120)
+                selection = verify_selection(data.get('selectionToken'), user['id'])
+                title, artist = selection['title'][:120], selection['artist'][:120]
+                url = selection['musicUrl'][:500]
                 note = optional_string(data, 'note', 500)
-                url = optional_string(data, 'musicUrl', 500)
-                if url:
-                    u = urlparse(url)
-                    if u.scheme not in ('https', 'http') or not u.netloc or u.username or u.password:
-                        raise APIError('음악 링크는 정상적인 http/https 주소여야 합니다.')
                 start, end = data.get('startSeconds'), data.get('endSeconds')
                 if start is not None and (type(start) is not int or not 0 <= start <= 36000):
                     raise APIError('시작 구간이 올바르지 않습니다.')
@@ -427,9 +634,13 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as conn:
                     check_room(conn, code)
                     check_member(conn, code, user['id'])
-                    conn.execute('''INSERT INTO songs(room_code,user_id,nickname,title,artist,music_url,note,start_seconds,end_seconds,created_at)
-                      VALUES (?,?,?,?,?,?,?,?,?,?)''',
-                      (code, user['id'], user['nickname'], title, artist, url, note, start, end, now()))
+                    conn.execute('''INSERT INTO songs(room_code,user_id,nickname,title,artist,music_url,note,start_seconds,end_seconds,created_at,
+                      source_platform,source_id,source_catalog,artwork_url,album_name,duration_ms,isrc)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                      (code, user['id'], user['nickname'], title, artist, url, note, start, end, now(),
+                       selection['sourcePlatform'], selection['sourceId'], selection['sourceCatalog'],
+                       selection.get('artworkUrl','')[:500], selection.get('album','')[:120],
+                       selection.get('durationMs'), selection.get('isrc','')[:32]))
                 return self.send_json({'ok': True}, 201)
             if song_id and subaction == 'like' and method == 'POST':
                 self.body()
