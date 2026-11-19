@@ -43,19 +43,28 @@ async function api(path, options = {}) {
   return data;
 }
 const PLATFORM_NAMES = { spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니뮤직', flo: 'FLO', bugs: '벅스', youtube: 'YouTube Music', other: '기타', none: '미설정' };
-function showAuth(mode = 'login') {
+function showAuth(mode = 'login', moveFocus = true) {
   state.authMode = mode;
-  $('loginTab').classList.toggle('active', mode === 'login');
-  $('registerTab').classList.toggle('active', mode === 'register');
-  $('registerExtra').classList.toggle('hidden', mode !== 'register');
-  $('authHeading').textContent = mode === 'register' ? '좋아하는 음악으로 연결되는 곳.' : '다시 만나서 반가워.';
-  $('authSubmit').innerHTML = mode === 'register' ? '회원가입하고 시작하기 <span>→</span>' : '로그인 <span>→</span>';
-  $('authPassword').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
-  $('authForm').reset();
-  $('authOverlay').classList.remove('hidden');
-  $('authUsername').focus();
+  const registering = mode === 'register';
+  $('loginTab').classList.toggle('hidden', !registering);
+  $('registerTab').classList.toggle('hidden', registering);
+  $('registerExtra').classList.toggle('hidden', !registering);
+  $('authHeading').textContent = registering ? '회원가입' : '로그인';
+  $('authSubmit').textContent = registering ? '회원가입' : '로그인';
+  $('authPassword').autocomplete = registering ? 'new-password' : 'current-password';
+  $('authPassword').minLength = registering ? 10 : 0;
+  $('authPassword').value = '';
+  $('registerNickname').required = registering;
+  setPasswordVisibility(false);
+  $('authError').classList.add('hidden');
+  if (moveFocus) $('authHeading').focus();
 }
-function hideAuth() { $('authOverlay').classList.add('hidden'); }
+
+function setPasswordVisibility(visible) {
+  $('authPassword').type = visible ? 'text' : 'password';
+  $('passwordVisibility').setAttribute('aria-pressed', String(visible));
+  $('passwordVisibility').setAttribute('aria-label', visible ? '비밀번호 숨기기' : '비밀번호 표시');
+}
 function showProfile() {
   if (!state.user) return showAuth();
   $('profileUsername').textContent = '@' + state.user.username;
@@ -64,22 +73,28 @@ function showProfile() {
   $('profileOverlay').classList.remove('hidden');
 }
 function hideProfile() { $('profileOverlay').classList.add('hidden'); }
+function openRoomAccess(mode) {
+  const invite = mode === 'join';
+  $('joinForm').classList.toggle('hidden', !invite);
+  $('createForm').classList.toggle('hidden', invite);
+  $('welcomeInvite').setAttribute('aria-expanded', String(invite));
+  if (!$('roomAccess').open) $('roomAccess').showModal();
+  $(invite ? 'roomCodeInput' : 'roomName').focus();
+}
 function renderAccount() {
-  $('accountButton').textContent = state.user ? `${state.user.nickname} · 내 프로필` : '로그인 / 가입';
-  $('accountSummary').classList.toggle('logged-in', Boolean(state.user));
-  if (state.user) {
-    $('accountSummary').innerHTML = `<div class="summary-name">✳ ${escaped(state.user.nickname)}</div><div class="summary-platform">내 음악 플랫폼 · ${escaped(PLATFORM_NAMES[state.user.platform] || '미설정')}</div><button class="btn" type="button" id="authEntryButton">프로필 수정하기 ↗</button>`;
-    $('authEntryButton').addEventListener('click', showProfile);
-  } else {
-    $('accountSummary').innerHTML = '<p>추천방을 이용하려면 먼저 로그인해 줘.</p><button class="btn btn-primary" id="authEntryButton" type="button">회원가입 / 로그인 ↗</button>';
-    $('authEntryButton').addEventListener('click', () => showAuth('register'));
-  }
+  const signedIn = Boolean(state.user);
+  document.body.classList.toggle('welcome-signed-in', signedIn);
+  $('authOverlay').classList.toggle('hidden', signedIn);
+  $('dashboard').classList.toggle('hidden', !signedIn);
+  dashboard.setUser(state.user);
 }
 async function completeLogin(user) {
   state.user = user;
   renderAccount();
   preferSearchPlatform();
-  hideAuth();
+  $('authForm').reset();
+  showAuth('login', false);
+  dashboard.chooseTab('home');
   if (state.pendingInvite) {
     const code = state.pendingInvite;
     try {
@@ -98,11 +113,15 @@ async function submitAuth(event) {
     payload.platform = $('registerPlatform').value;
     if (!payload.nickname) return toast('닉네임을 입력해 줘.', true);
   }
+  $('authError').classList.add('hidden');
   setBusy(form, true);
   try {
     const data = await api(`/api/auth/${state.authMode === 'register' ? 'register' : 'login'}`, {method: 'POST', body: JSON.stringify(payload)});
     await completeLogin(data.user);
-  } catch(e) { toast(e.message, true); }
+  } catch(e) {
+    $('authError').textContent = e.message;
+    $('authError').classList.remove('hidden');
+  }
   finally { setBusy(form, false); }
 }
 async function submitProfile(event) {
@@ -124,6 +143,9 @@ async function logout() {
   try {
     await api('/api/auth/logout', {method: 'POST', body: '{}'});
     state.user = null;
+    state.pendingInvite = null;
+    $('authForm').reset();
+    showAuth('login', false);
     hideProfile();
     showLanding();
     renderAccount();
@@ -131,27 +153,32 @@ async function logout() {
   } catch(e) { toast(e.message, true); }
 }
 function setBusy(form, busy) {
-  [...form.querySelectorAll('button, input, textarea')].forEach(x => x.disabled = busy);
+  [...form.querySelectorAll('button, input, textarea, select')].forEach(x => x.disabled = busy);
   if (form.id === 'addSongForm') $('submitSong').disabled = busy || !selectedTrack;
 }
 function showLanding() {
   closeRoomMenu(false);
   document.body.classList.remove('room-active');
+  document.querySelector('meta[name="theme-color"]').content = '#ffffff';
+  document.title = 'TRACKROOM — 좋아하는 음악을 함께 발견하는 공간';
   state.roomCode = null;
   state.room = null;
   clearInterval(refreshTimer);
   $('landing').classList.remove('hidden');
-  $('landingFooter').classList.remove('hidden');
   $('roomView').classList.add('hidden');
   closeAddPanel();
   closeBubbleDetail();
   bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
   bubbleLastRender = '';
   history.replaceState({}, '', '/');
-
+  if (state.user) {
+    dashboard.chooseTab('home');
+    dashboard.refresh();
+  }
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goToRoom(code) {
+  if ($('roomAccess').open) $('roomAccess').close();
   if (state.roomCode !== code) {
     bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
     bubbleLastRender = '';
@@ -160,8 +187,8 @@ function goToRoom(code) {
   closeRoomMenu(false);
   state.roomCode = code;
   document.body.classList.add('room-active');
+  document.querySelector('meta[name="theme-color"]').content = '#101213';
   $('landing').classList.add('hidden');
-  $('landingFooter').classList.add('hidden');
   $('roomView').classList.remove('hidden');
   history.replaceState({}, '', `/?room=${encodeURIComponent(code)}`);
   refreshRoom();
@@ -197,7 +224,11 @@ function parseTime(str) {
   if (value > 36000) throw new Error('구간이 너무 깁니다.');
   return value;
 }
-function timeLabel(value) { if (value === null || value === undefined) return ''; return `${Math.floor(value/60)}:${String(value%60).padStart(2,'0')}`; }
+function timeLabel(value) {
+  if (value === null || value === undefined) return '';
+  const seconds = Math.floor(value);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
 function sourceLabel(url) {
   try {
     const h = new URL(url).hostname.toLowerCase();
@@ -529,9 +560,15 @@ async function joinRoom(event) {
   event.preventDefault();
   const form = event.currentTarget;
   try {
-    if (!state.user) { state.pendingInvite = $('roomCodeInput').value.replace(/\s/g,'').toUpperCase(); showAuth('register'); throw new Error('로그인 후 이용해 줘.'); }
     const code = $('roomCodeInput').value.replace(/\s/g,'').toUpperCase();
     if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) throw new Error('8자리 초대 코드를 확인해 주세요.');
+    if (!state.user) {
+      state.pendingInvite = code;
+      $('roomAccess').close();
+      showAuth('login');
+      toast('로그인하면 초대받은 방으로 이동해요.');
+      return;
+    }
     setBusy(form,true);
     await api(`/api/rooms/${code}/join`,{method:'POST',body:'{}'});
     goToRoom(code);
@@ -947,19 +984,25 @@ async function copyShare() {
   } catch { window.prompt('초대 링크를 복사해 줘:',url); }
 }
 async function init() {
-  $('homeBtn').addEventListener('click',showLanding);
-  $('accountButton').addEventListener('click', () => state.user ? showProfile() : showAuth());
+  dashboard.init();
+  $('homeBtn').addEventListener('click', () => dashboard.chooseTab('home'));
+  $('accountButton').addEventListener('click', showProfile);
+  $('welcomeInvite').addEventListener('click', () => openRoomAccess('join'));
+  $('closeRoomAccess').addEventListener('click', () => $('roomAccess').close());
+  $('roomAccess').addEventListener('close', () => $('welcomeInvite').setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('[data-room-action]').forEach(button => {
+    button.addEventListener('click', () => openRoomAccess(button.dataset.roomAction));
+  });
+  $('passwordVisibility').addEventListener('click', () => setPasswordVisibility($('authPassword').type === 'password'));
   $('authForm').addEventListener('submit',submitAuth);
   $('profileForm').addEventListener('submit',submitProfile);
   $('loginTab').addEventListener('click',() => showAuth('login'));
   $('registerTab').addEventListener('click',() => showAuth('register'));
-  $('closeAuth').addEventListener('click',hideAuth);
   $('closeProfile').addEventListener('click',hideProfile);
   $('logoutButton').addEventListener('click',logout);
-  $('authOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideAuth(); });
   $('profileOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideProfile(); });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { hideAuth(); hideProfile(); closeInstallHelp(); closeBubbleDetail(); closeAddPanel(); closeRoomMenu(); }
+    if (e.key === 'Escape') { hideProfile(); closeInstallHelp(); closeBubbleDetail(); closeAddPanel(); closeRoomMenu(); }
     if (e.key === 'Tab' && roomMenuOpen && !$('roomMenu').classList.contains('hidden')) {
       const focusable = [...$('roomMenu').querySelectorAll('button:not(:disabled)')];
       const first = focusable[0], last = focusable[focusable.length - 1];
@@ -1008,6 +1051,7 @@ async function init() {
   $('installHelpCloseButton').addEventListener('click', closeInstallHelp);
   $('installHelpOverlay').addEventListener('click', event => { if(event.target === event.currentTarget) closeInstallHelp(); });
   $('roomMenuHome').addEventListener('click', showLanding);
+  showAuth('login', false);
   renderAccount();
   catalogHint();
   try {

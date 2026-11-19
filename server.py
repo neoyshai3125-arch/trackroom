@@ -240,6 +240,21 @@ def user_data(user):
             'nickname': user['nickname'], 'platform': user['platform']}
 
 
+def song_data(s):
+    return {
+        'id': s['id'], 'title': s['title'], 'artist': s['artist'],
+        'nickname': s['nickname'], 'userId': s['user_id'],
+        'musicUrl': s['music_url'], 'note': s['note'],
+        'sourcePlatform': s['source_platform'], 'sourceCatalog': s['source_catalog'],
+        'sourceId': s['source_id'], 'album': s['album_name'],
+        'artworkUrl': s['artwork_url'], 'artworkStoreUrl': s['artwork_store_url'],
+        'durationMs': s['duration_ms'],
+        'isrc': s['isrc'],
+        'startSeconds': s['start_seconds'], 'endSeconds': s['end_seconds'],
+        'createdAt': s['created_at'], 'likeCount': s['like_count'], 'liked': bool(s['liked'])
+    }
+
+
 def list_room(conn, code, user_id):
     room = check_room(conn, code)
     check_member(conn, code, user_id)
@@ -251,19 +266,139 @@ def list_room(conn, code, user_id):
     ''', (user_id, code)).fetchall()
     return {
         'room': {'code': room['code'], 'name': room['name'], 'createdAt': room['created_at'], 'memberCount': member_count},
-        'songs': [{
-            'id': s['id'], 'title': s['title'], 'artist': s['artist'],
-            'nickname': s['nickname'], 'userId': s['user_id'],
-            'musicUrl': s['music_url'], 'note': s['note'],
-            'sourcePlatform': s['source_platform'], 'sourceCatalog': s['source_catalog'],
-            'sourceId': s['source_id'], 'album': s['album_name'],
-            'artworkUrl': s['artwork_url'], 'artworkStoreUrl': s['artwork_store_url'],
-            'durationMs': s['duration_ms'],
-            'isrc': s['isrc'],
-            'startSeconds': s['start_seconds'], 'endSeconds': s['end_seconds'],
-            'createdAt': s['created_at'], 'likeCount': s['like_count'], 'liked': bool(s['liked'])
-        } for s in song_rows]
+        'songs': [song_data(s) for s in song_rows]
     }
+
+
+
+def home_data(conn, user_id):
+    rooms = conn.execute("""
+        SELECT r.code, r.name, r.created_at,
+          (SELECT COUNT(*) FROM members m WHERE m.room_code=r.code) AS member_count,
+          (SELECT COUNT(*) FROM songs t WHERE t.room_code=r.code) AS song_count,
+          (SELECT t.artwork_url FROM songs t WHERE t.room_code=r.code
+              AND t.artwork_url IS NOT NULL AND t.artwork_url<>'' ORDER BY t.id DESC LIMIT 1) AS cover
+        FROM members mine JOIN rooms r ON r.code=mine.room_code
+        WHERE mine.user_id=? ORDER BY mine.joined_at DESC, r.code
+    """, (user_id,)).fetchall()
+    song_base = """
+        SELECT s.*, r.name AS room_name, COALESCE(l.n,0) AS like_count,
+          EXISTS(SELECT 1 FROM likes mine WHERE mine.song_id=s.id AND mine.user_id=?) AS liked
+        FROM members m JOIN rooms r ON m.room_code=r.code JOIN songs s ON s.room_code=r.code
+        LEFT JOIN (SELECT song_id, COUNT(*) AS n FROM likes GROUP BY song_id) l ON l.song_id=s.id
+        WHERE m.user_id=?
+    """
+    recent = conn.execute(song_base + ' ORDER BY s.id DESC LIMIT 20', (user_id, user_id)).fetchall()
+    popular = conn.execute(song_base + ' AND l.n>0 ORDER BY l.n DESC, s.id DESC LIMIT 12', (user_id, user_id)).fetchall()
+    def entry(row):
+        return {**song_data(row), 'room': {'code': row['room_code'], 'name': row['room_name']}}
+    return {'rooms': [{'code': r['code'], 'name': r['name'], 'createdAt': r['created_at'],
+                       'memberCount': r['member_count'], 'songCount': r['song_count'],
+                       'artworkUrl': r['cover']} for r in rooms],
+            'recentSongs': [entry(row) for row in recent],
+            'popularSongs': [entry(row) for row in popular]}
+
+
+def safe_apple_preview(url):
+    if not isinstance(url, str):
+        return ''
+    try:
+        parsed = urlparse(url)
+        if (parsed.scheme == 'https' and parsed.netloc in (
+                'audio-ssl.itunes.apple.com', 'audio.itunes.apple.com', 'audio-ssl.music.apple.com')
+                and parsed.path.lower().endswith(('.m4a', '.mp3', '.aac'))):
+            return url
+    except ValueError:
+        pass
+    return ''
+
+
+def apple_preview(track_id, country):
+    key = ('preview', track_id, country)
+    with CACHE_LOCK:
+        known = SEARCH_CACHE.get(key)
+        if known and known[0] > time.time():
+            return known[1]
+    successful_lookup = False
+    last_error = None
+    for region in dict.fromkeys((country, 'US', 'JP')):
+        try:
+            data = request_json('https://itunes.apple.com/lookup?' +
+                                urllib.parse.urlencode({'id': track_id, 'country': region}),
+                                headers={'User-Agent': 'TRACKROOM/6.7'}, timeout=4)
+        except APIError as error:
+            if error.status == 429:
+                raise
+            last_error = error
+            continue
+        successful_lookup = True
+        for row in data.get('results', []):
+            if str(row.get('trackId')) != track_id:
+                continue
+            track = normalize_apple_record(row, region)
+            if track and track.get('previewUrl'):
+                with CACHE_LOCK:
+                    if len(SEARCH_CACHE) >= 200:
+                        SEARCH_CACHE.clear()
+                    SEARCH_CACHE[key] = (time.time() + 1800, track)
+                return track
+    if not successful_lookup and last_error:
+        raise last_error
+    raise APIError('이 곡의 Apple 미리듣기를 찾을 수 없어.', 404)
+
+
+APPLE_CHARTS = (
+    ('track', 'https://rss.applemarketingtools.com/api/v2/kr/music/most-played/10/songs.json'),
+    ('album', 'https://itunes.apple.com/kr/rss/topalbums/limit=10/json'),
+)
+
+
+def load_apple_chart(item):
+    kind, url = item
+    try:
+        feed = request_json(url, headers={'User-Agent': 'TRACKROOM/6.7'}, timeout=5).get('feed', {})
+    except Exception:
+        return []
+    results = []
+    for row in (feed.get('results') or feed.get('entry') or [])[:10]:
+        if not isinstance(row, dict):
+            continue
+        if kind == 'track':
+            title, artist = row.get('name'), row.get('artistName')
+            url, art, sid = row.get('url'), row.get('artworkUrl100'), str(row.get('id', ''))
+        else:
+            title = row.get('im:name', {}).get('label')
+            artist = row.get('im:artist', {}).get('label')
+            result_link = row.get('link', {})
+            url = result_link.get('attributes', {}).get('href') if isinstance(result_link, dict) else ''
+            art = next((p.get('label') for p in reversed(row.get('im:image', [])) if isinstance(p, dict)), '')
+            sid = str(row.get('id', {}).get('attributes', {}).get('im:id', ''))
+        if not (title and artist and sid.isdigit() and isinstance(url, str)):
+            continue
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            continue
+        if parsed.scheme != 'https' or parsed.netloc not in ('music.apple.com', 'itunes.apple.com'):
+            continue
+        results.append({'itemType': kind, 'title': title, 'artist': artist, 'musicUrl': url,
+                        'sourceId': sid, 'sourcePlatform': 'apple', 'sourceCatalog': 'itunes_store',
+                        'artworkUrl': safe_artwork(art), 'storeCountry': 'KR'})
+    return results
+
+
+def home_charts():
+    key = ('home-charts',)
+    with CACHE_LOCK:
+        cached = SEARCH_CACHE.get(key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        tracks, albums = executor.map(load_apple_chart, APPLE_CHARTS)
+    result = {'tracks': tracks, 'albums': albums}
+    with CACHE_LOCK:
+        SEARCH_CACHE[key] = (time.time() + (900 if tracks or albums else 60), result)
+    return result
 
 
 def check_rate_limit(ip):
@@ -691,6 +826,7 @@ def normalize_apple_record(row, country, item_type='track'):
                 'albumId':str(row.get('collectionId') or ''), 'storeCountry':country,
                 'musicUrl':link[:500], 'artworkUrl':safe_artwork(row.get('artworkUrl100','')),
                 'durationMs':row.get('trackTimeMillis') or None, 'isrc':'',
+                'previewUrl':safe_apple_preview(row.get('previewUrl')),
                 'releaseDate':row.get('releaseDate','')}
     try: u=urlparse(link)
     except (ValueError,TypeError): return None
@@ -1509,6 +1645,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('X-Frame-Options', 'DENY')
+        # An unread request body would be parsed as part of the next HTTP request.
+        if not self._body_consumed and (self.headers.get('Content-Length', '0') != '0' or
+                                        self.headers.get('Transfer-Encoding')):
+            self.send_header('Connection', 'close')
+            self.close_connection = True
         if cookie:
             self.send_header('Set-Cookie', cookie)
         self.end_headers()
@@ -1534,7 +1675,9 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if not 1 <= length <= 16000:
                 raise APIError('요청 내용이 비어 있거나 너무 깁니다.')
-            value = json.loads(self.rfile.read(length))
+            payload = self.rfile.read(length)
+            self._body_consumed = len(payload) == length
+            value = json.loads(payload)
             if not isinstance(value, dict):
                 raise ValueError()
             return value
@@ -1588,6 +1731,12 @@ class Handler(BaseHTTPRequestHandler):
                   '/index.html': ('index.html', 'text/html; charset=utf-8'),
                   '/style.css': ('style.css', 'text/css; charset=utf-8'),
                   '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                  '/home.js': ('home.js', 'application/javascript; charset=utf-8'),
+                  '/home.css': ('home.css', 'text/css; charset=utf-8'),
+                  '/login-prism.webp': ('login-prism.webp', 'image/webp'),
+                  '/fonts/bricolage.woff2': ('fonts/bricolage.woff2', 'font/woff2'),
+                  '/fonts/plex-sans.woff2': ('fonts/plex-sans.woff2', 'font/woff2'),
+                  '/fonts/plex-mono.woff2': ('fonts/plex-mono.woff2', 'font/woff2'),
                   '/favicon.svg': ('favicon.svg', 'image/svg+xml'),
                   '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json; charset=utf-8'),
                   '/sw.js': ('sw.js', 'application/javascript; charset=utf-8'),
@@ -1656,6 +1805,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'user': user_data(updated)})
 
         user = self.require_user() if route.startswith('/api/') else None
+        if method == 'GET' and route == '/api/home':
+            with db() as conn:
+                return self.send_json(home_data(conn, user['id']))
+        if method == 'GET' and route == '/api/home/charts':
+            return self.send_json(home_charts())
+        if method == 'GET' and route == '/api/catalog/preview':
+            query = parse_qs(parsed.query)
+            track_id = query.get('trackId', [''])[0]
+            country = query.get('country', ['KR'])[0].upper()
+            if not re.fullmatch(r'[0-9]{1,20}', track_id) or country not in ('KR', 'US', 'JP'):
+                raise APIError('올바른 Apple 음원 ID를 사용해 줘.', 422)
+            search_rate_limit(user['id'])
+            return self.send_json({'track': apple_preview(track_id, country)})
         # Resolve album art progressively after song search. Only a signed
         # Last.fm result from this user can be resolved, so callers cannot
         # turn the endpoint into an arbitrary Apple search proxy.
@@ -1893,6 +2055,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self): self.handle_request('DELETE')
 
     def handle_request(self, method):
+        self._body_consumed = False
         try:
             self.dispatch(method)
         except APIError as error:

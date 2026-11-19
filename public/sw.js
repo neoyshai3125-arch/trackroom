@@ -1,11 +1,13 @@
-/* TRACKROOM v6.5 — public app-shell only. Never cache login, rooms, or API data. */
-const SHELL_CACHE = 'trackroom-shell-v6.5';
+/* TRACKROOM v6.7 — public app shell. Never cache account, room or API data. */
+const SHELL_CACHE = 'trackroom-shell-v6.7';
 const SHELL_FILES = [
-  '/', '/offline.html', '/style.css?v=6.5', '/app.js?v=6.5',
+  '/offline.html', '/style.css?v=6.7', '/app.js?v=6.7', '/home.css?v=6.7', '/home.js?v=6.7',
+  '/login-prism.webp', '/fonts/bricolage.woff2', '/fonts/plex-sans.woff2', '/fonts/plex-mono.woff2',
   '/favicon.svg', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png',
   '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'
 ];
+const SHELL_PATHS = new Set(SHELL_FILES.map(path => path.split('?')[0]));
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -44,8 +46,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  const shellPaths = ['/app.js', '/style.css', '/favicon.svg', '/manifest.webmanifest', '/offline.html'];
-  if (!shellPaths.includes(url.pathname) && !url.pathname.startsWith('/icons/')) return;
+  if (!SHELL_PATHS.has(url.pathname)) return;
   event.respondWith((async () => {
     const cache = await caches.open(SHELL_CACHE);
     try {
