@@ -117,8 +117,10 @@ function mount(host, {onSelect, onZoom}) {
     const layoutSize = Math.round(base * zoom);
     const overviewZoom = minimumZoom();
     const overviewProgress = clamp((1 - zoom) / (1 - overviewZoom), 0, 1);
+    const defaultBubbleScale = .94;
     const overviewBubbleScale = .87;
-    const size = Math.round(layoutSize * (1 - (1 - overviewBubbleScale) * overviewProgress));
+    const bubbleScale = defaultBubbleScale + (overviewBubbleScale - defaultBubbleScale) * overviewProgress;
+    const size = Math.round(layoutSize * bubbleScale);
     const defaultMinSize = Math.max(10, Math.round(base * .21));
     const overviewMinSize = Math.round(base * overviewZoom * overviewBubbleScale * .95);
     // Interpolate the minimum diameter in pixels so distant bubbles grow during zoom-out.
