@@ -12,6 +12,9 @@ let bubbleSelectedId = null;
 let bubbleLastRender = '';
 let roomBubbles = null;
 let lastShuffleSongId = null;
+let roomSearchFilters;
+const roomPreviewHistory = [];
+const roomPreviewSeen = new Set();
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -154,6 +157,8 @@ function showLanding() {
   document.title = 'TRACKROOM — 좋아하는 음악을 함께 발견하는 공간';
   state.roomCode = null;
   state.room = null;
+  state.songs = [];
+  resetRoomPreviewNavigation();
   clearInterval(refreshTimer);
   $('landing').classList.remove('hidden');
   $('roomView').classList.add('hidden');
@@ -171,7 +176,10 @@ function showLanding() {
 }
 function goToRoom(code) {
   if ($('roomAccess').open) $('roomAccess').close();
-  if (state.roomCode !== code) {
+  const switchingRooms = state.roomCode !== code;
+  if (switchingRooms) {
+    state.songs = [];
+    resetRoomPreviewNavigation();
     closeBubbleDetail();
     roomBubbles.clear();
     bubbleLastRender = '';
@@ -179,6 +187,11 @@ function goToRoom(code) {
   }
   closeRoomMenu(false);
   state.roomCode = code;
+  if (switchingRooms) {
+    const preview = dashboard.getPreview();
+    if ((preview.playing || preview.loading) && preview.track?.previewRoomCode !== code) dashboard.pausePreview();
+    syncRoomPreview();
+  }
   document.body.classList.add('room-active');
   document.querySelector('meta[name="theme-color"]').content = '#fdfbff';
   $('landing').classList.add('hidden');
@@ -277,7 +290,7 @@ function renderSongs() {
     roomBubbles.setSongs(songs.map(song => ({
       id: song.id,
       title: song.title,
-      label: `${song.title}, ${song.artist}, ${song.nickname}님의 추천. 상세 보기`,
+      label: `${song.title}, ${song.artist}, ${song.nickname}님의 추천`,
       color: artColor(song.title),
       artwork: bubbleArtwork(song)
     })), bubbleSelectedId);
@@ -286,6 +299,10 @@ function renderSongs() {
   $('bubbleCanvasEmpty').classList.toggle('hidden', songs.length > 0);
   $('bubbleCanvas').classList.toggle('is-empty', songs.length === 0);
   $('roomTrackCount').textContent = songs.length;
+  const preview = dashboard.getPreview();
+  if (preview.track?.previewRoomCode === state.roomCode && (preview.playing || preview.loading)
+      && !songs.some(song => song.id === preview.track.id)) dashboard.pausePreview();
+  syncRoomPreview();
 }
 function renderBubbleDetail(song) {
   const owned = song.userId === state.user?.id;
@@ -314,12 +331,105 @@ function openBubbleDetail(songId) {
   bubbleSelectedId = songId;
   roomBubbles.setSelected(songId);
   renderBubbleDetail(song);
+  return song;
 }
 function closeBubbleDetail() {
   bubbleSelectedId = null;
   $('bubbleDetail').classList.add('hidden');
   roomBubbles.setSelected(null);
 }
+function resetRoomPreviewNavigation() {
+  roomPreviewHistory.length = 0;
+  roomPreviewSeen.clear();
+  syncRoomPreview();
+}
+
+function activeRoomPreview(preview = dashboard.getPreview()) {
+  if (!state.roomCode || preview.track?.previewRoomCode !== state.roomCode) return null;
+  return state.songs.find(song => song.id === preview.track.id) || null;
+}
+
+function syncRoomPreview(preview = dashboard.getPreview()) {
+  const song = activeRoomPreview(preview);
+  const active = Boolean(song);
+  $('roomPreviewBar').classList.toggle('hidden', !active);
+  $('roomView').classList.toggle('has-room-preview', active);
+  const previous = active && roomPreviewHistory.some(id => state.songs.some(item => item.id === id && id !== song.id));
+  const next = active && state.songs.length > 1;
+  roomBubbles?.setPreview(active ? {id: song.id, playing: preview.playing, loading: preview.loading, previous, next} : null);
+  if (!active) return;
+
+  const cover = $('roomPreviewCover');
+  if (cover.dataset.original !== preview.cover) {
+    cover.dataset.original = preview.cover;
+    cover.classList.toggle('hidden', !preview.cover);
+    if (preview.cover) cover.src = highResArtworkUrl(preview.cover, 180);
+    else cover.removeAttribute('src');
+  }
+  $('roomPreviewTitle').textContent = song.title;
+  $('roomPreviewArtist').textContent = song.artist;
+  if ($('roomPreviewStatus').textContent !== preview.status) $('roomPreviewStatus').textContent = preview.status;
+  const store = $('roomPreviewStore');
+  store.classList.toggle('hidden', !preview.store);
+  if (preview.store) {
+    store.href = preview.store;
+    store.textContent = new URL(preview.store).hostname === 'itunes.apple.com' ? 'iTunes Store ↗' : 'Apple Music ↗';
+  } else store.removeAttribute('href');
+  $('roomPreviewPlay').setAttribute('aria-label', preview.loading ? '미리듣기 준비 취소' : preview.playing ? '일시정지' : '미리듣기 재생');
+  $('roomPreviewPlayIcon').setAttribute('d', preview.playing || preview.loading ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z');
+  $('roomPreviewPrevious').disabled = !previous;
+  $('roomPreviewNext').disabled = !next;
+  const seek = $('roomPreviewSeek');
+  seek.disabled = !preview.duration;
+  if (document.activeElement !== seek || !seek.matches(':active')) {
+    seek.max = String(preview.duration || 1);
+    seek.value = String(preview.duration ? preview.position : 0);
+  }
+  $('roomPreviewTime').textContent = preview.duration ? `${timeLabel(preview.position)} / ${timeLabel(preview.duration)}` : '0:00 / –:––';
+  const progress = preview.duration ? Math.min(100, preview.position / preview.duration * 100) : 0;
+  $('bubbleStage').style.setProperty('--room-preview-progress', String(progress));
+}
+
+function startRoomPreview(song, keepHistory = true) {
+  const current = activeRoomPreview();
+  if (keepHistory && current && current.id !== song.id) {
+    roomPreviewHistory.push(current.id);
+    if (roomPreviewHistory.length > 100) roomPreviewHistory.shift();
+  }
+  roomPreviewSeen.add(song.id);
+  void dashboard.selectTrack({...song, previewRoomCode: state.roomCode});
+  roomBubbles.focus(song.id, true);
+}
+
+function roomPreviewAction(action) {
+  const current = activeRoomPreview();
+  if (!current) return;
+  if (action === 'toggle') {
+    dashboard.togglePreview();
+    return;
+  }
+  let song;
+  if (action === 'previous') {
+    while (!song && roomPreviewHistory.length) {
+      const id = roomPreviewHistory.pop();
+      song = state.songs.find(item => item.id === id && id !== current.id);
+    }
+  } else if (action === 'next') {
+    const candidates = state.songs.filter(item => item.id !== current.id);
+    if (!candidates.length) return;
+    let unplayed = candidates.filter(item => !roomPreviewSeen.has(item.id));
+    if (!unplayed.length) {
+      roomPreviewSeen.clear();
+      roomPreviewSeen.add(current.id);
+      unplayed = candidates;
+    }
+    song = unplayed[Math.floor(Math.random() * unplayed.length)];
+  }
+  if (!song) return;
+  if (bubbleSelectedId !== null) openBubbleDetail(song.id);
+  startRoomPreview(song, action !== 'previous');
+}
+
 function openRoomMenu() {
   if (!state.roomCode || roomMenuOpen) return;
   closeAddPanel();
@@ -356,8 +466,31 @@ function closeAddPanel() {
 function initBubbleCanvas() {
   const canvas = $('bubbleCanvas');
   roomBubbles = window.TrackroomRoomBubbles.mount($('bubbleStage'), {
-    onSelect: openBubbleDetail,
+    onSelect: songId => {
+      const song = state.songs.find(item => item.id === songId);
+      if (!song) return;
+      if (activeRoomPreview()?.id === songId) openBubbleDetail(songId);
+      else {
+        closeBubbleDetail();
+        startRoomPreview(song);
+      }
+    },
+    onControl: roomPreviewAction,
     onZoom: zoom => { $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`; }
+  });
+  dashboard.watchPreview(syncRoomPreview);
+  $('roomPreviewPlay').addEventListener('click', () => roomPreviewAction('toggle'));
+  $('roomPreviewPrevious').addEventListener('click', () => roomPreviewAction('previous'));
+  $('roomPreviewNext').addEventListener('click', () => roomPreviewAction('next'));
+  $('roomPreviewDetails').addEventListener('click', () => {
+    const song = activeRoomPreview();
+    if (song) openBubbleDetail(song.id);
+  });
+  $('roomPreviewSeek').addEventListener('input', event => dashboard.seekPreview(Number(event.currentTarget.value)));
+  $('roomPreviewCover').addEventListener('error', event => {
+    const cover = event.currentTarget;
+    if (cover.dataset.original && cover.src !== cover.dataset.original) cover.src = cover.dataset.original;
+    else cover.classList.add('hidden');
   });
   const directions = {ArrowLeft: [-65, 0], ArrowRight: [65, 0], ArrowUp: [0, -65], ArrowDown: [0, 65]};
   canvas.addEventListener('keydown', event => {
@@ -745,7 +878,7 @@ async function searchSongs(event) {
   button.disabled = true;
   $('searchStatus').textContent = '음원을 검색하고 있어…';
   try {
-    const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind})}`);
+    const data = await api(`/api/catalog/search?${new URLSearchParams({platform,q,kind,...roomSearchFilters.params()})}`);
     if (seq !== searchCounter) return;
     catalogResults = data.results || [];
     catalogView = kind === 'artist' ? 'artist-profiles' : 'search';
@@ -871,6 +1004,18 @@ async function init() {
   $('createForm').addEventListener('submit',createRoom);
   $('joinForm').addEventListener('submit',joinRoom);
   $('addSongForm').addEventListener('submit',addSong);
+  roomSearchFilters = window.TrackroomCatalogFilters.mount($('roomCatalogFilters'), {
+    platform: () => $('catalogPlatform').value,
+    onChange: () => {
+      ++searchCounter;
+      clearSelected();
+      clearAlbumNavigation();
+      catalogResults = [];
+      $('catalogResults').replaceChildren();
+      $('catalogSearchForm').querySelector('[type="submit"]').disabled = false;
+      $('searchStatus').textContent = '선택한 조건으로 검색해 줘.';
+    }
+  });
   $('catalogSearchForm').addEventListener('submit', searchSongs);
   $('catalogResultSort').addEventListener('change', () => {
     renderCatalogResults();
@@ -895,7 +1040,7 @@ async function init() {
   });
 
   initBubbleCanvas();
-  $('catalogPlatform').addEventListener('change', () => {++searchCounter;clearSelected();clearAlbumNavigation();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
+  $('catalogPlatform').addEventListener('change', () => {roomSearchFilters.update();++searchCounter;clearSelected();clearAlbumNavigation();catalogResults=[];$('catalogResults').innerHTML='';$('searchStatus').textContent='검색 서비스를 변경했어. 새로 검색해 줘.';catalogHint();});
   $('albumBack').addEventListener('click', backToAlbumResults);
   $('roomMenuToggle').addEventListener('click', () => roomMenuOpen ? closeRoomMenu() : openRoomMenu());
   $('roomMenuClose').addEventListener('click', () => closeRoomMenu());

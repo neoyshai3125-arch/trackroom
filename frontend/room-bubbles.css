@@ -42,6 +42,12 @@ body.room-active #bubbleStage {
 body.room-active #bubbleStage ._2MD0k { overscroll-behavior:contain; }
 body.room-active #bubbleStage.is-dragging,
 body.room-active #bubbleStage.is-dragging .music-bubble { cursor:grabbing; }
+body.room-active #bubbleStage .room-bubble-tile {
+  position:relative;
+  width:100%;
+  height:100%;
+  transform:scale(var(--viewport-bubble-scale,1));
+}
 body.room-active #bubbleStage .music-bubble {
   position:relative;
   inset:auto;
@@ -55,7 +61,7 @@ body.room-active #bubbleStage .music-bubble {
   background:var(--bubble-art);
   color:white;
   box-shadow:none;
-  transform:scale(var(--viewport-bubble-scale,1));
+  transform:none;
   -webkit-tap-highlight-color:transparent;
 }
 body.room-active #bubbleStage .bubble-sphere {
@@ -155,4 +161,136 @@ body.room-active .canvas-empty .btn-primary { color:white; background:var(--room
   body.room-active .mobile-dock-button,
   body.room-active .mobile-action-dock .room-add-fab { width:44px; height:44px; min-width:44px; min-height:44px; border-radius:13px; }
   body.room-active .mobile-dock-button { border-color:transparent; }
+}
+
+body.room-active #bubbleStage .room-bubble-progress {
+  position:absolute;
+  z-index:1;
+  inset:0;
+  width:100%;
+  height:100%;
+  fill:none;
+  stroke-width:3;
+  pointer-events:none;
+}
+body.room-active #bubbleStage .room-bubble-progress-track { stroke:#271837a8; }
+body.room-active #bubbleStage .room-bubble-progress-value {
+  stroke:#fff;
+  stroke-linecap:round;
+  stroke-dasharray:var(--room-preview-progress,0) 100;
+}
+body.room-active #bubbleStage .room-bubble-preview-controls {
+  position:absolute;
+  z-index:2;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:3%;
+  pointer-events:none;
+}
+body.room-active #bubbleStage .room-bubble-preview-controls button {
+  width:27%;
+  aspect-ratio:1;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid #ffffff65;
+  border-radius:50%;
+  color:#fff;
+  background:#2718378a;
+  pointer-events:auto;
+  touch-action:manipulation;
+}
+body.room-active #bubbleStage .room-bubble-preview-controls button:nth-child(2) { width:33%; }
+body.room-active #bubbleStage .room-bubble-preview-controls button:disabled { opacity:.42; pointer-events:none; }
+body.room-active #bubbleStage .room-bubble-preview-controls button:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+body.room-active #bubbleStage .room-bubble-preview-controls svg { width:68%; height:68%; fill:currentColor; }
+body.room-active #bubbleStage .room-bubble-tile[data-compact] .room-bubble-preview-controls { display:none; }
+
+body.room-active .room-preview-bar {
+  position:absolute;
+  z-index:31;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(76px + env(safe-area-inset-bottom,0px));
+  width:min(550px,calc(100% - 24px));
+  min-height:86px;
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:2px 9px;
+  padding:7px 9px;
+  border:1px solid var(--room-border);
+  border-radius:16px;
+  color:var(--room-ink);
+  background:var(--room-paper);
+}
+body.room-active .room-preview-bar > img {
+  grid-column:1;
+  width:44px;
+  height:44px;
+  border-radius:9px;
+  object-fit:cover;
+}
+body.room-active .room-preview-meta { grid-column:2; min-width:0; }
+body.room-active .room-preview-meta button {
+  display:block;
+  width:100%;
+  padding:0;
+  border:0;
+  color:inherit;
+  background:transparent;
+  text-align:left;
+}
+body.room-active .room-preview-meta :is(strong,small) {
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:12px;
+}
+body.room-active .room-preview-meta small { color:var(--room-muted); font-size:11px; }
+body.room-active #roomPreviewStore { color:var(--room-violet); text-decoration:underline; font-size:11px; }
+body.room-active .room-preview-controls { grid-column:3; display:flex; }
+body.room-active .room-preview-controls button {
+  width:42px;
+  height:44px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:10px;
+  color:var(--room-ink);
+  background:transparent;
+}
+body.room-active .room-preview-controls button:disabled { opacity:.36; }
+body.room-active .room-preview-controls button:focus-visible,
+body.room-active .room-preview-meta button:focus-visible { outline:2px solid var(--room-violet); }
+body.room-active .room-preview-controls svg { width:19px; height:19px; fill:currentColor; }
+body.room-active .room-preview-seek {
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--room-muted);
+  font-size:11px;
+  font-variant-numeric:tabular-nums;
+}
+body.room-active .room-preview-seek input {
+  flex:1;
+  min-width:0;
+  height:22px;
+  padding:0;
+  accent-color:var(--room-violet);
+}
+body.room-active .room-preview-seek span { width:80px; text-align:right; }
+body.room-active #roomView.has-room-preview #bubbleStage { bottom:calc(180px + env(safe-area-inset-bottom,0px)); }
+body.room-active #roomView.has-room-preview .bubble-detail {
+  bottom:calc(186px + env(safe-area-inset-bottom,0px));
+  max-height:calc(100dvh - 275px - env(safe-area-inset-bottom,0px));
+}
+@media (max-width:380px) {
+  body.room-active .room-preview-bar { gap:2px 6px; }
+  body.room-active .room-preview-controls button { width:36px; }
 }

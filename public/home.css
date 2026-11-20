@@ -191,7 +191,7 @@ body:not(.room-active) :is(button, a, input, select, [tabindex]):focus-visible {
 }
 .dash-playback { color: #fff; background: #5c497a; }
 .dash-cover-art, .dash-art-shade { position: absolute; inset: 0; pointer-events: none; }
-.dash-cover-art { background-position: center; background-size: cover; }
+.dash-cover-art { width: 100%; height: 100%; object-position: center; object-fit: cover; }
 .dash-art-shade { background: linear-gradient(to bottom, #170e2938, #17102c13 48%, #1a102acc); }
 .dash-player-empty {
   position: relative;

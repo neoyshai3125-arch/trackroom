@@ -9,20 +9,44 @@ const scrollSelector = '._2MD0k';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-function SongBubble({song, bubbleSize, selected, onSelect}) {
+const previousPath = 'M5 5h2v14H5zm14 0L8 12l11 7z';
+const pausePath = 'M7 4h4v16H7zm7 0h4v16h-4z';
+const playPath = 'M7 4l14 8L7 20z';
+const nextPath = 'M17 5h2v14h-2zM5 5l11 7-11 7z';
+
+function PreviewControl({label, path, action, disabled, onControl}) {
+  return <button type="button" aria-label={label} disabled={disabled} onClick={() => onControl(action)}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>
+  </button>;
+}
+
+function SongBubble({song, bubbleSize, selected, preview, onSelect, onControl}) {
   return (
-    <button type="button" className="music-bubble" data-song-id={song.id}
-      aria-pressed={selected} aria-label={song.label} tabIndex={bubbleSize < 44 ? -1 : 0}
-      style={{'--bubble-art': song.color}} onClick={event => onSelect(song.id, event)}>
-      <span className="bubble-sphere" aria-hidden="true" dangerouslySetInnerHTML={{__html: song.artwork}} />
-      {bubbleSize >= 63 && <span className="bubble-name" aria-hidden="true">{song.title}</span>}
-    </button>
+    <div className="room-bubble-tile">
+      <button type="button" className="music-bubble" data-song-id={song.id}
+        aria-pressed={selected || Boolean(preview)} aria-label={`${song.label}. ${preview ? "상세 보기" : "미리듣기"}`} tabIndex={bubbleSize < 44 ? -1 : 0}
+        style={{'--bubble-art': song.color}} onClick={event => onSelect(song.id, event)}>
+        <span className="bubble-sphere" aria-hidden="true" dangerouslySetInnerHTML={{__html: song.artwork}} />
+        {bubbleSize >= 63 && <span className="bubble-name" aria-hidden="true">{song.title}</span>}
+      </button>
+      {preview && <svg className="room-bubble-progress" viewBox="0 0 100 100" aria-hidden="true">
+        <circle className="room-bubble-progress-track" cx="50" cy="50" r="47" />
+        <circle className="room-bubble-progress-value" cx="50" cy="50" r="47" pathLength="100" transform="rotate(-90 50 50)" />
+      </svg>}
+      {preview && bubbleSize >= 66 && <div className="room-bubble-preview-controls" role="group" aria-label="버블 재생 조작">
+        <PreviewControl label="이전 곡" path={previousPath} action="previous" disabled={!preview.previous} onControl={onControl} />
+        <PreviewControl label={preview.loading ? '미리듣기 준비 취소' : preview.playing ? '일시정지' : '미리듣기 재생'}
+          path={preview.playing || preview.loading ? pausePath : playPath} action="toggle" onControl={onControl} />
+        <PreviewControl label="다음 곡 셔플" path={nextPath} action="next" disabled={!preview.next} onControl={onControl} />
+      </div>}
+    </div>
   );
 }
 
-function mount(host, {onSelect, onZoom}) {
+function mount(host, {onSelect, onControl, onZoom}) {
   let songs = [];
   let selectedId = null;
+  let preview = null;
   let zoom = 1;
   let drag = null;
   let pinch = null;
@@ -62,10 +86,13 @@ function mount(host, {onSelect, onZoom}) {
 
   function updateViewportSizes() {
     sizingFrame = 0;
-    const bubbles = [...host.querySelectorAll('.music-bubble')];
+    const bubbles = [...host.querySelectorAll('.room-bubble-tile')];
     const view = scroller();
     if (!viewportSizing || !view) {
-      for (const bubble of bubbles) bubble.style.removeProperty('--viewport-bubble-scale');
+      for (const bubble of bubbles) {
+        bubble.style.removeProperty('--viewport-bubble-scale');
+        bubble.removeAttribute('data-compact');
+      }
       return;
     }
     const {size, minSize, edgeMinSize} = viewportSizing;
@@ -78,7 +105,7 @@ function mount(host, {onSelect, onZoom}) {
     // extra overview enlargement near the visible viewport boundary.
     const scales = bubbles.map(bubble => {
       const tile = bubble.parentElement.getBoundingClientRect();
-      if (!tile.width) return 1;
+      if (!tile.width) return {scale: 1, compact: true};
       const x = tile.left + tile.width / 2;
       const y = tile.top + tile.height / 2;
       const edgeDistance = Math.min(x - bounds.left, bounds.right - x, y - bounds.top, bounds.bottom - y);
@@ -87,10 +114,12 @@ function mount(host, {onSelect, onZoom}) {
       const nativeFocus = clamp((tile.width - minSize) / nativeRange, 0, 1);
       const unboosted = edgeMinSize + (size - edgeMinSize) * nativeFocus;
       const visibleDiameter = unboosted + (tile.width - unboosted) * weight;
-      return Math.min(1, visibleDiameter / tile.width);
+      return {scale: Math.min(1, visibleDiameter / tile.width), compact: visibleDiameter < 66};
     });
     bubbles.forEach((bubble, index) => {
-      bubble.style.setProperty('--viewport-bubble-scale', scales[index].toFixed(4));
+      const {scale, compact} = scales[index];
+      bubble.style.setProperty('--viewport-bubble-scale', scale.toFixed(4));
+      bubble.toggleAttribute('data-compact', compact);
     });
   }
 
@@ -148,7 +177,8 @@ function mount(host, {onSelect, onZoom}) {
     };
     ReactDOM.render(
       <BubbleUI className="trackroom-bubble-ui" options={options} style={{width:'100%', height:'100%'}}>
-        {songs.map(song => <SongBubble key={song.id} song={song} selected={song.id === selectedId} onSelect={onBubbleClick} />)}
+        {songs.map(song => <SongBubble key={song.id} song={song} selected={song.id === selectedId}
+          onSelect={onBubbleClick} preview={song.id === preview?.id ? preview : null} onControl={onControl} />)}
       </BubbleUI>,
       host
     );
@@ -182,20 +212,21 @@ function mount(host, {onSelect, onZoom}) {
     centre(reducedMotion.matches ? 'auto' : 'smooth');
   }
 
-  function focus(id) {
+  function focus(id, immediate = false) {
     stopAnimation();
     setZoom(1);
+    if (host.clientWidth !== measuredWidth || host.clientHeight !== measuredHeight) render();
     const view = scroller();
     const bubble = [...host.querySelectorAll('[data-song-id]')].find(button => Number(button.dataset.songId) === id);
     if (!view || !bubble) return;
-    const item = bubble.parentElement;
+    const item = bubble.closest('.room-bubble-tile').parentElement;
     const rect = item.getBoundingClientRect();
     const viewRect = view.getBoundingClientRect();
     const transform = new DOMMatrixReadOnly(item.style.transform);
     view.scrollTo({
       left: view.scrollLeft + rect.x + rect.width / 2 - transform.e - (viewRect.x + viewRect.width / 2),
       top: view.scrollTop + rect.y + rect.height / 2 - transform.f - (viewRect.y + viewRect.height / 2),
-      behavior: reducedMotion.matches ? 'auto' : 'smooth'
+      behavior: immediate || reducedMotion.matches ? 'auto' : 'smooth'
     });
   }
 
@@ -212,6 +243,12 @@ function mount(host, {onSelect, onZoom}) {
     if (songs.length) render();
   }
 
+  function setPreview(current) {
+    if (JSON.stringify(current) === JSON.stringify(preview)) return;
+    preview = current;
+    if (songs.length) render();
+  }
+
   function clear() {
     stopAnimation();
     cancelAnimationFrame(sizingFrame);
@@ -219,6 +256,7 @@ function mount(host, {onSelect, onZoom}) {
     viewportSizing = null;
     songs = [];
     selectedId = null;
+    preview = null;
     zoom = 1;
     pointers.clear();
     drag = pinch = null;
@@ -251,7 +289,7 @@ function mount(host, {onSelect, onZoom}) {
 
   host.addEventListener('pointerdown', event => {
     const view = scroller();
-    if (!view || event.button !== 0 || pointers.size >= 2) return;
+    if (!view || event.button !== 0 || pointers.size >= 2 || event.target.closest('.room-bubble-preview-controls')) return;
     stopAnimation();
     pointers.set(event.pointerId, {x:event.clientX, y:event.clientY});
     if (pointers.size === 1) {
@@ -324,7 +362,7 @@ function mount(host, {onSelect, onZoom}) {
     onZoom(zoom);
   }).observe(host);
 
-  return {setSongs, setSelected, clear, reset, focus, pan, zoomBy: factor => setZoom(zoom * factor)};
+  return {setSongs, setSelected, setPreview, clear, reset, focus, pan, zoomBy: factor => setZoom(zoom * factor)};
 }
 
 window.TrackroomRoomBubbles = {mount};

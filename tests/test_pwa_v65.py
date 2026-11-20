@@ -43,10 +43,11 @@ class TestPWAAssets(TestCase):
         text=data.decode('utf-8')
         self.assertIn('self.addEventListener(\'fetch\'',text)
         self.assertIn("url.pathname.startsWith('/api/')",text)
-        self.assertIn("SHELL_CACHE = 'trackroom-shell-v6.8.1'",text)
-        for path, mime in [('/login-prism.webp', 'image/webp'), ('/home.css?v=6.7', 'text/css'),
-                           ('/home.js?v=6.7', 'application/javascript'), ('/fonts/plex-sans.woff2', 'font/woff2'),
-                           ('/room-bubbles.js?v=6.8.1', 'application/javascript'), ('/room-bubbles.css?v=6.8', 'text/css')]:
+        self.assertIn("SHELL_CACHE = 'trackroom-shell-v6.9'",text)
+        for path, mime in [('/login-prism.webp', 'image/webp'), ('/home.css?v=6.9', 'text/css'),
+                           ('/home.js?v=6.9', 'application/javascript'), ('/fonts/plex-sans.woff2', 'font/woff2'),
+                           ('/room-bubbles.js?v=6.9', 'application/javascript'), ('/room-bubbles.css?v=6.9', 'text/css'),
+                           ('/catalog-filters.js?v=6.9', 'application/javascript'), ('/catalog-filters.css?v=6.9', 'text/css')]:
             self.assertIn(path, text)
             self.assertTrue(self.get(path)[0]['Content-Type'].startswith(mime))
         self.assertIn('인터넷 연결',self.get('/offline.html')[1].decode('utf-8'))
@@ -56,12 +57,12 @@ class TestPWAAssets(TestCase):
         self.assertIn('id="installAppHome"',html)
         self.assertIn('id="roomMenuInstallApp"',html)
         self.assertIn('id="installHelpOverlay"',html)
-        self.assertIn('/app.js?v=6.8',html)
-        self.assertIn('/room-bubbles.js?v=6.8.1',html)
-        self.assertIn('/room-bubbles.css?v=6.8',html)
-        self.assertIn('/style.css?v=6.7',html)
-        self.assertIn('/home.js?v=6.7',html)
-        self.assertIn('/home.css?v=6.7',html)
+        self.assertIn('/app.js?v=6.9',html)
+        self.assertIn('/room-bubbles.js?v=6.9',html)
+        self.assertIn('/room-bubbles.css?v=6.9',html)
+        self.assertIn('/style.css?v=6.9',html)
+        self.assertIn('/home.js?v=6.9',html)
+        self.assertIn('/home.css?v=6.9',html)
     def test_app_landing_exposes_auth_and_invite_controls(self):
         html=self.get('/')[1].decode('utf-8')
         self.assertNotIn('record-visual',html)

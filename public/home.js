@@ -20,6 +20,10 @@ const dashboard = (() => {
   let previewCatalogId = '';
   let nativeAudio;
   let pointerId = null;
+  let previewLoading = false;
+  let homeFilters;
+  const previewListeners = new Set();
+  const previewCountries = ['KR', 'US', 'JP', 'GB', 'FR', 'DE'];
 
   function element(tag, className, value) {
     const el = document.createElement(tag);
@@ -51,10 +55,18 @@ const dashboard = (() => {
     if (!url || !['music.apple.com','itunes.apple.com'].includes(url.hostname)) return '';
     return (url.searchParams.get('i') || url.pathname.match(/\/song\/[^/]+\/([0-9]+)$/)?.[1] || '').match(/^[0-9]{1,20}$/)?.[0] || '';
   }
+  function roomSource(track) {
+    return track && /^[A-HJ-NP-Z2-9]{8}$/.test(track.previewRoomCode || '')
+      && /^[0-9]{1,18}$/.test(track.id) ? track.previewRoomCode : '';
+  }
+  function playbackKey(track) {
+    const room = roomSource(track);
+    return room ? `room:${room}:${track.id}` : trackId(track);
+  }
   function uniqueTracks(tracks) {
     const unique = new Map();
     for (const row of tracks) {
-      const id = trackId(row);
+      const id = playbackKey(row);
       if (id && !unique.has(id)) unique.set(id, row);
     }
     return [...unique.values()];
@@ -231,7 +243,7 @@ const dashboard = (() => {
     });
     if (index === 2) ensureCharts();
   }
-  async function runSearch(query, kind) {
+  async function runSearch(query, kind, filters = {}) {
     chooseTab('explore');
     $('dashSearchQuery').value = query;
     $('dashSearchKind').value = kind;
@@ -240,7 +252,7 @@ const dashboard = (() => {
     $('dashSearchBack').classList.add('hidden');
     $('dashSearchResults').replaceChildren(message('검색 중이에요…'));
     try {
-      const data = await api('/api/catalog/search?' + new URLSearchParams({platform: 'apple', q: query, kind}));
+      const data = await api('/api/catalog/search?' + new URLSearchParams({platform: 'apple', q: query, kind, ...filters}));
       if (version === state.searchRequest) renderSearch(data.results);
     } catch (error) {
       if (version === state.searchRequest) $('dashSearchResults').replaceChildren(message(error.message));
@@ -281,7 +293,7 @@ const dashboard = (() => {
   function restoreTrack() {
     try {
       const record = JSON.parse(localStorage.getItem('trackroom-preview:' + state.userId));
-      if (!record || !trackId(record.track)) return;
+      if (!record || !playbackKey(record.track)) return;
       state.track = record.track;
       state.queue = [record.track];
       resumePosition = Number.isFinite(record.position) ? Math.max(0, record.position) : 0;
@@ -319,6 +331,9 @@ const dashboard = (() => {
     state.dragTime = null;
     previewCatalogId = '';
     playingStatus = '';
+    previewLoading = false;
+    player = media;
+    homeFilters?.reset();
     $('dashSearchQuery').value = '';
     $('dashSearchResults').replaceChildren();
     $('dashSearchBack').classList.add('hidden');
@@ -330,6 +345,56 @@ const dashboard = (() => {
   function setStatus(text) {
     playingStatus = text;
     $('dashPlayStatus').textContent = text;
+    notifyPreview();
+  }
+
+  function getPreview() {
+    const total = duration();
+    const position = total ? player.currentTime : resumePosition;
+    const track = state.track;
+    const link = shopUrl(track?.musicUrl || track?.artworkStoreUrl);
+    return {
+      track,
+      duration: total,
+      position,
+      playing: !!(player && !player.paused && previewCatalogId === playbackKey(track)),
+      loading: previewLoading,
+      status: playingStatus,
+      cover: coverUrl(track?.artworkUrl),
+      store: link && ['music.apple.com','itunes.apple.com'].includes(link.hostname) ? link.href : '',
+    };
+  }
+  function notifyPreview() {
+    const value = getPreview();
+    previewListeners.forEach(listener => listener(value));
+  }
+  function watchPreview(listener) {
+    previewListeners.add(listener);
+    listener(getPreview());
+  }
+  function pausePreview() {
+    ++state.playRequest;
+    previewLoading = false;
+    player?.pause();
+    if (playingStatus === '미리듣기를 준비하는 중이에요.') setStatus('Apple 미리듣기');
+    showPlayer();
+  }
+  function togglePreview() {
+    if (previewLoading || !player?.paused) pausePreview();
+    else void play();
+  }
+  function seekPreview(seconds) {
+    if (!duration() || !Number.isFinite(seconds)) return;
+    player.currentTime = Math.max(0, Math.min(duration() - 0.05, seconds));
+    updateProgress();
+    saveTrack();
+  }
+  function displayCover(art, raw) {
+    if (art.dataset.original === raw) return;
+    art.dataset.original = raw;
+    art.classList.toggle('hidden', !raw);
+    if (raw) art.src = highResArtworkUrl(raw, 1200);
+    else art.removeAttribute('src');
   }
   function showPlayer() {
     const track = state.track;
@@ -337,10 +402,9 @@ const dashboard = (() => {
     $('dashPlayerContent').classList.toggle('hidden', !track);
     $('dashMiniPlayer').classList.toggle('hidden', !track);
     $('dashboard').classList.toggle('has-preview', Boolean(track));
+    displayCover($('dashCoverArt'), coverUrl(track?.artworkUrl));
     if (track) {
       const src = coverUrl(track.artworkUrl);
-      const art = $('dashPlayback').querySelector('.dash-cover-art');
-      art.style.backgroundImage = src ? `url("${src.replaceAll('"', '%22')}")` : '';
       $('dashPlayingTitle').textContent = $('dashMiniTitle').textContent = track.title;
       $('dashPlayingArtist').textContent = track.artist;
       $('dashMiniArtist').textContent = track.artist;
@@ -360,7 +424,7 @@ const dashboard = (() => {
     const playing = player && !player.paused;
     $('dashPlay').setAttribute('aria-label', playing ? '일시정지' : '미리듣기 재생');
     $('dashPlayIcon').setAttribute('d', playing ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z');
-    const index = state.queue.findIndex(item => trackId(item) === trackId(track));
+    const index = state.queue.findIndex(item => playbackKey(item) === playbackKey(track));
     $('dashPrev').disabled = index <= 0;
     $('dashNext').disabled = index < 0 || index >= state.queue.length - 1;
     updateProgress();
@@ -391,8 +455,8 @@ const dashboard = (() => {
     };
   }
   async function selectTrack(track, queue = [track]) {
-    if (!trackId(track)) return;
-    if (trackId(track) !== trackId(state.track)) {
+    if (!playbackKey(track)) return;
+    if (playbackKey(track) !== playbackKey(state.track)) {
       saveTrack();
       player?.pause();
       state.track = track;
@@ -400,22 +464,26 @@ const dashboard = (() => {
       playingStatus = 'Apple 미리듣기';
     }
     state.queue = uniqueTracks(queue);
-    if (!state.queue.some(item => trackId(item) === trackId(state.track))) state.queue.unshift(state.track);
+    if (!state.queue.some(item => playbackKey(item) === playbackKey(state.track))) state.queue.unshift(state.track);
     showPlayer();
     await play();
   }
   async function play() {
     const track = state.track;
-    if (!track || !trackId(track)) return;
+    if (!track || !playbackKey(track)) return;
     initAnalysis();
     const version = ++state.playRequest;
-    const id = trackId(track);
+    const id = playbackKey(track);
+    previewLoading = true;
     if (!previewUrl(track.previewUrl)) setStatus('미리듣기를 준비하는 중이에요.');
     try {
       if (!previewUrl(track.previewUrl)) {
-        const country = ['KR','US','JP'].includes(track.storeCountry) ? track.storeCountry : 'KR';
-        const response = await api('/api/catalog/preview?' + new URLSearchParams({trackId: id, country}));
-        if (version !== state.playRequest || id !== trackId(state.track)) return;
+        const country = previewCountries.includes(track.storeCountry) ? track.storeCountry : 'KR';
+        const room = roomSource(track);
+        const endpoint = room ? `/api/rooms/${room}/songs/${track.id}/preview` :
+          '/api/catalog/preview?' + new URLSearchParams({trackId: trackId(track), country});
+        const response = await api(endpoint);
+        if (version !== state.playRequest || id !== playbackKey(state.track)) return;
         state.track = hydrate(track, response.track);
       }
       const url = previewUrl(state.track.previewUrl);
@@ -425,6 +493,7 @@ const dashboard = (() => {
         player = media;
         previewCatalogId = id;
         if (player.src !== url) player.src = url;
+        else if (Number.isFinite(player.duration)) player.currentTime = 0;
       }
       setStatus(player === nativeAudio ? 'Apple 미리듣기 · 이 음원의 시각화는 제공되지 않아요.' : 'Apple 미리듣기');
       showPlayer();
@@ -438,6 +507,11 @@ const dashboard = (() => {
         setStatus(error.name === 'NotAllowedError' ? '재생 버튼을 한 번 더 눌러 줘.' :
           error.name === 'AbortError' ? 'Apple 미리듣기' : error.message);
         showPlayer();
+      }
+    } finally {
+      if (version === state.playRequest) {
+        previewLoading = false;
+        notifyPreview();
       }
     }
   }
@@ -462,12 +536,12 @@ const dashboard = (() => {
     }
   }
   function step(offset) {
-    const at = state.queue.findIndex(track => trackId(track) === trackId(state.track));
+    const at = state.queue.findIndex(track => playbackKey(track) === playbackKey(state.track));
     const next = state.queue[at + offset];
     if (next) selectTrack(next, state.queue);
   }
   function duration() {
-    return player && previewCatalogId === trackId(state.track) && Number.isFinite(player.duration) ? player.duration : 0;
+    return player && previewCatalogId === playbackKey(state.track) && Number.isFinite(player.duration) ? player.duration : 0;
   }
   function updateProgress() {
     const total = duration();
@@ -483,6 +557,7 @@ const dashboard = (() => {
     dial.setAttribute('aria-valuemax', String(Math.floor(total)));
     dial.setAttribute('aria-valuenow', String(Math.floor(total ? displayed : 0)));
     dial.setAttribute('aria-valuetext', $('dashTime').textContent);
+    notifyPreview();
   }
   function dialPoint(event) {
     const rect = $('dashSeek').getBoundingClientRect();
@@ -553,8 +628,11 @@ const dashboard = (() => {
     window.addEventListener('pagehide', saveTrack);
     $('dashStartExplore').addEventListener('click', () => chooseTab('explore'));
     $('dashMiniDetails').addEventListener('click', () => { chooseTab('home'); slide(0); });
-    $('dashPlay').addEventListener('click', () => {
-      if (player?.paused) play(); else { ++state.playRequest; player.pause(); }
+    $('dashPlay').addEventListener('click', togglePreview);
+    $('dashCoverArt').addEventListener('error', event => {
+      const art = event.currentTarget;
+      if (art.dataset.original && art.src !== art.dataset.original) art.src = art.dataset.original;
+      else art.classList.add('hidden');
     });
     $('dashPrev').addEventListener('click', () => step(-1));
     $('dashNext').addEventListener('click', () => step(1));
@@ -565,10 +643,19 @@ const dashboard = (() => {
     document.querySelectorAll('[data-dash-tab]').forEach(button => {
       button.addEventListener('click', () => chooseTab(button.dataset.dashTab));
     });
+    homeFilters = window.TrackroomCatalogFilters.mount($('dashCatalogFilters'), {
+      platform: () => 'apple',
+      onChange: () => {
+        ++state.searchRequest;
+        searchHistory = [];
+        $('dashSearchBack').classList.add('hidden');
+        $('dashSearchResults').replaceChildren(message('선택한 조건으로 검색해 줘.'));
+      }
+    });
     $('dashSearchForm').addEventListener('submit', event => {
       event.preventDefault();
       const query = $('dashSearchQuery').value.trim();
-      if (query.length >= 2) runSearch(query, $('dashSearchKind').value);
+      if (query.length >= 2) runSearch(query, $('dashSearchKind').value, homeFilters.params());
     });
     $('dashSearchBack').addEventListener('click', () => {
       ++state.searchRequest;
@@ -599,5 +686,8 @@ const dashboard = (() => {
     drawSpectrum();
     renderHome(emptyHome);
   }
-  return {init, setUser, refresh, chooseTab, selectTrack, canPreview: track => Boolean(trackId(track))};
+  return {
+    init, setUser, refresh, chooseTab, selectTrack, getPreview, watchPreview, togglePreview, pausePreview, seekPreview,
+    canPreview: track => Boolean(trackId(track))
+  };
 })();

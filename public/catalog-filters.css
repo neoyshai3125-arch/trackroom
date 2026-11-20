@@ -1,0 +1,42 @@
+.catalog-filter-region {
+  grid-column:1 / -1;
+  padding-top:9px;
+}
+.catalog-filter-fields {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+}
+.catalog-filter-fields[hidden] { display:none; }
+.catalog-filter-fields label {
+  min-width:0;
+  display:grid;
+  gap:4px;
+  font-size:12px;
+  font-weight:700;
+}
+.catalog-filter-region .catalog-filter-fields select,
+#dashSearchForm .catalog-filter-region .catalog-filter-fields select {
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  min-height:40px;
+  color:#382951;
+  background:#fff;
+  border:1px solid #d8ccea;
+  border-radius:9px;
+  padding:6px 8px;
+  font:inherit;
+  font-size:14px;
+}
+.catalog-filter-fields select:focus-visible {
+  outline:2px solid #8a5fc3;
+  outline-offset:2px;
+}
+.catalog-filter-description {
+  margin:5px 0 0;
+  color:inherit;
+  opacity:.76;
+  font-size:11px;
+  line-height:1.45;
+}

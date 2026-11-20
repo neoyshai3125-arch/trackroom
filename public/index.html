@@ -11,9 +11,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.7" />
-  <link rel="stylesheet" href="/home.css?v=6.7" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.8" />
+  <link rel="stylesheet" href="/style.css?v=6.9" />
+  <link rel="stylesheet" href="/home.css?v=6.9" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
 </head>
 <body>
@@ -58,7 +59,7 @@
         <section id="dashHome" class="dash-page">
           <div id="dashCarousel" class="dash-carousel" aria-label="홈 카드" tabindex="0">
             <section id="dashPlayback" class="dash-card dash-playback" aria-label="최근 재생">
-              <div class="dash-cover-art" aria-hidden="true"></div>
+              <img id="dashCoverArt" class="dash-cover-art hidden" alt="" aria-hidden="true" decoding="async" referrerpolicy="no-referrer" />
               <div class="dash-art-shade" aria-hidden="true"></div>
               <div id="dashPlayerEmpty" class="dash-player-empty"><h2>이어 듣기</h2><p>음악 탐색에서 곡을 골라 미리 들어봐.</p><button type="button" id="dashStartExplore">음악 찾아보기</button></div>
               <div id="dashPlayerContent" class="hidden">
@@ -100,6 +101,7 @@
             <label class="dash-sr" for="dashSearchKind">검색 기준</label>
             <select id="dashSearchKind"><option value="track">곡</option><option value="artist">아티스트</option><option value="album">앨범</option></select>
             <button type="submit">검색</button>
+            <div id="dashCatalogFilters" class="catalog-filter-region"></div>
           </form>
           <button type="button" id="dashSearchBack" class="hidden">검색 결과로 돌아가기</button>
           <div id="dashSearchResults" aria-live="polite"></div>
@@ -169,7 +171,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.8.1</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -205,6 +207,7 @@
             <div id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</div>
             <label class="field-label" for="catalogSearchMode">검색 기준</label>
             <select id="catalogSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트 검색 → 프로필 → 앨범·곡 선택</option><option value="album">앨범명으로 검색 → 수록곡 선택</option></select>
+            <div id="roomCatalogFilters" class="catalog-filter-region"></div>
             <label class="field-label" for="songQuery">음악 검색 <span class="required">*</span></label>
             <div class="catalog-search-row">
               <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목 또는 아티스트" autocomplete="off" required />
@@ -236,6 +239,23 @@
           <div class="panel-foot">NO AUDIO UPLOADS. JUST GOOD TASTE. ☺</div>
         </aside>
       </div>
+      <section id="roomPreviewBar" class="room-preview-bar hidden" aria-label="추천방 미리듣기">
+        <img id="roomPreviewCover" alt="" class="hidden" referrerpolicy="no-referrer" />
+        <div class="room-preview-meta">
+          <button id="roomPreviewDetails" type="button" aria-label="재생 중인 곡 상세 보기"><strong id="roomPreviewTitle"></strong><small id="roomPreviewArtist"></small></button>
+          <a id="roomPreviewStore" class="hidden" target="_blank" rel="noopener noreferrer">Apple Music ↗</a>
+          <small id="roomPreviewStatus" role="status"></small>
+        </div>
+        <div class="room-preview-controls">
+          <button id="roomPreviewPrevious" type="button" aria-label="이전 곡"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2v14H5zm14 0L8 12l11 7z"/></svg></button>
+          <button id="roomPreviewPlay" type="button" aria-label="미리듣기 재생"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="roomPreviewPlayIcon" d="M7 4l14 8L7 20z"/></svg></button>
+          <button id="roomPreviewNext" type="button" aria-label="다음 곡 셔플"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5h2v14h-2zM5 5l11 7-11 7z"/></svg></button>
+        </div>
+        <div class="room-preview-seek">
+          <input id="roomPreviewSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="미리듣기 재생 위치" disabled />
+          <span id="roomPreviewTime"></span>
+        </div>
+      </section>
       <div class="mobile-action-dock" role="group" aria-label="음악 공간 빠른 조작">
         <button type="button" class="mobile-dock-button mobile-dock-shuffle" id="mobileShuffle" title="셔플: 다른 추천곡 발견" aria-label="셔플: 다른 추천곡 발견">
           <svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h2.6c2.2 0 3.5-.8 4.8-2.7l5.2-7.6C15.9 5.8 17.3 5 19.5 5H22"/><path d="M2 6h2.5c2.1 0 3.4.7 4.7 2.6"/><path d="M14.8 15.4c1.2 1.8 2.6 2.6 4.7 2.6H22"/></svg>
@@ -280,8 +300,9 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/home.js?v=6.7" defer></script>
-  <script src="/room-bubbles.js?v=6.8.1" defer></script>
-  <script src="/app.js?v=6.8" defer></script>
+  <script src="/catalog-filters.js?v=6.9" defer></script>
+  <script src="/home.js?v=6.9" defer></script>
+  <script src="/room-bubbles.js?v=6.9" defer></script>
+  <script src="/app.js?v=6.9" defer></script>
 </body>
 </html>

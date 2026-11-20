@@ -347,6 +347,73 @@ def apple_preview(track_id, country):
     raise APIError('이 곡의 Apple 미리듣기를 찾을 수 없어.', 404)
 
 
+def room_song_preview(song):
+    track_id = str(song['source_id'] or '') if song['source_platform'] == 'apple' else ''
+    country = 'KR'
+    for link in (song['artwork_store_url'], song['music_url']):
+        try:
+            parsed = urlparse(link or '')
+            if parsed.scheme != 'https' or parsed.hostname not in ('music.apple.com', 'itunes.apple.com'):
+                continue
+            region = parsed.path.split('/')[1].upper()
+            if region in APPLE_STOREFRONTS:
+                country = region
+            if not track_id:
+                match = re.search(r'/song/(?:[^/]+/)?([0-9]{1,20})/?$', parsed.path)
+                track_id = parse_qs(parsed.query).get('i', [''])[0] or (match[1] if match else '')
+            if track_id:
+                break
+        except (ValueError, IndexError):
+            continue
+    if re.fullmatch(r'[0-9]{1,20}', track_id):
+        try:
+            return apple_preview(track_id, country)
+        except APIError as error:
+            if error.status != 404:
+                raise
+
+    title, artist = song['title'], song['artist']
+    key = ('room-preview-match', clean_title(title), artwork_key(artist), artwork_key(song['album_name']))
+    with CACHE_LOCK:
+        cached = SEARCH_CACHE.get(key)
+    if cached and cached[0] > time.time():
+        if cached[1]:
+            return cached[1]
+        raise APIError('이 곡의 Apple 미리듣기를 찾을 수 없어.', 404)
+
+    candidates = []
+    last_error = None
+    queried = False
+    for region in dict.fromkeys((country, 'US', 'JP')):
+        try:
+            rows = apple_search_request(f'{title} {artist}', region, 'song', 45)
+        except APIError as error:
+            if error.status == 429:
+                raise
+            last_error = error
+            continue
+        queried = True
+        for row in rows:
+            track = normalize_apple_record(row, region)
+            if (track and track.get('previewUrl') and clean_title(track['title']) == key[1]
+                    and song_version(track['title']) == song_version(title)
+                    and artist_forms(track['artist']) & artist_forms(artist)):
+                candidates.append(track)
+        if candidates:
+            break
+    if not queried and last_error:
+        raise last_error
+    match = next((track for track in candidates if artwork_key(track['album']) == key[3]),
+                 candidates[0] if candidates else None)
+    with CACHE_LOCK:
+        if len(SEARCH_CACHE) >= 200:
+            SEARCH_CACHE.clear()
+        SEARCH_CACHE[key] = (time.time() + (1800 if match else 180), match)
+    if not match:
+        raise APIError('이 곡의 Apple 미리듣기를 찾을 수 없어.', 404)
+    return match
+
+
 APPLE_CHARTS = (
     ('track', 'https://rss.applemarketingtools.com/api/v2/kr/music/most-played/10/songs.json'),
     ('album', 'https://itunes.apple.com/kr/rss/topalbums/limit=10/json'),
@@ -778,6 +845,33 @@ def spotify_access_token():
 
 
 SEARCH_RESULT_LIMIT = 50
+APPLE_STOREFRONTS = frozenset(('KR', 'US', 'JP', 'GB', 'FR', 'DE'))
+DEFAULT_APPLE_SEARCH_STOREFRONTS = ('US', 'JP')
+APPLE_GENRES = {
+    'k-pop': ('K-Pop', 'Korean Pop', '케이팝', '한국 팝', 'ケーポップ'),
+    'j-pop': ('J-Pop', 'Japanese Pop', '제이팝', '일본 팝', 'ジェイポップ'),
+    'pop': ('Pop', '팝', 'ポップ', 'Popmusik', 'Variété internationale'),
+    'hip-hop': ('Hip-Hop/Rap', 'Hip-Hop', 'Rap', '힙합/랩', '힙합', '랩', 'ヒップホップ／ラップ', 'ヒップホップ'),
+    'rnb': ('R&B/Soul', 'R&B', 'Soul', 'R&B/소울', '알앤비', '소울', 'R&B／ソウル'),
+    'rock': ('Rock', '록', '락', 'ロック', 'Hard Rock', 'Classic Rock'),
+    'indie': ('Alternative', 'Indie', 'Indie Rock', 'Indie Pop', 'Independent', '인디', '얼터너티브', 'オルタナティブ'),
+    'electronic': ('Electronic', 'Electronica', 'Dance', 'EDM', '일렉트로닉', '댄스', 'エレクトロニック', 'ダンス', 'Électronique', 'Elektronische Musik'),
+    'jazz': ('Jazz', '재즈', 'ジャズ'),
+    'classical': ('Classical', '클래식', 'クラシック', 'Klassik', 'Musique classique', 'Classique'),
+    'ballad': ('Ballad', 'Korean Ballad', '발라드', 'バラード'),
+    'soundtrack': ('Soundtrack', 'Original Score', 'TV Soundtrack', '사운드트랙', 'OST', 'サウンドトラック', 'Bande originale'),
+    'latin': ('Latin', 'Latin Pop', 'Latino', '라틴', 'ラテン'),
+}
+APPLE_GENRE_KEYS = {genre: frozenset(artwork_key(name) for name in names)
+                    for genre, names in APPLE_GENRES.items()}
+
+
+def matches_apple_genre(name, genre):
+    return not genre or artwork_key(name) in APPLE_GENRE_KEYS[genre]
+
+
+def apple_storefronts(selected=''):
+    return (selected,) if selected else DEFAULT_APPLE_SEARCH_STOREFRONTS
 # These are *localized titles*, not machine translations. Keep special aliases
 # small and explicit; a public iTunes Store search has no translation endpoint.
 SEARCH_ALIASES = {
@@ -832,6 +926,7 @@ def normalize_apple_record(row, country, item_type='track'):
     except (ValueError,TypeError): return None
     if not (u.scheme == 'https' and u.hostname in ('itunes.apple.com','music.apple.com')):return None
     if not (result['title'] and result['artist']): return None
+    result['genre'] = str(row.get('primaryGenreName') or '')[:80]
     return result
 
 
@@ -920,13 +1015,14 @@ def enrich_artist_photos(profiles, query):
     return profiles
 
 
-def search_artists(platform, query):
+def search_artists(platform, query, *, country='', genre=''):
     """Return artist *profiles*, never song suggestions."""
     if platform == 'apple':
         pairs=[]
-        for country in ('US','JP'):
-            rows=apple_search_request(query,country,'musicArtist',80,'artistTerm')
-            pairs.extend((country,row) for row in rows if isinstance(row,dict))
+        for storefront in apple_storefronts(country):
+            rows=apple_search_request(query,storefront,'musicArtist',200 if genre else 80,'artistTerm')
+            pairs.extend((storefront,row) for row in rows
+                         if isinstance(row,dict) and matches_apple_genre(row.get('primaryGenreName'), genre))
         artists=[]
         seen=set()
         for country,row in blend_storefronts(pairs):
@@ -983,7 +1079,7 @@ def artist_tracks(artist):
     if artist.get('sourcePlatform') == 'apple':
         aid=str(artist.get('sourceId') or '')
         country=artist.get('storeCountry','US')
-        if not aid.isdigit() or country not in ('US','JP'):
+        if not aid.isdigit() or country not in APPLE_STOREFRONTS:
             raise APIError('유효한 아티스트 정보를 다시 선택해 줘.',422)
         # Combine leading catalog songs and recent releases; don't let the first
         # 50 popular entries prevent new songs from ever appearing.
@@ -1127,7 +1223,7 @@ def artist_albums(artist, tracks=None):
         return []
     aid = str(artist.get('sourceId') or '')
     country = artist.get('storeCountry','US')
-    if not aid.isdigit() or country not in ('US','JP'):
+    if not aid.isdigit() or country not in APPLE_STOREFRONTS:
         raise APIError('유효한 아티스트 정보를 다시 선택해 줘.', 422)
     albums={}
     # Apple's own catalog: authoritative artist ID -> albums lookup.
@@ -1191,12 +1287,12 @@ def blend_storefronts(pairs):
     return combined+extra
 
 
-def merge_apple_results(pairs, max_results=SEARCH_RESULT_LIMIT):
+def merge_apple_results(pairs, max_results=SEARCH_RESULT_LIMIT, *, genre=''):
     unique={}
     for rank, (country, row) in enumerate(blend_storefronts(pairs)):
         kind = 'album' if (row.get('wrapperType') == 'collection' or row.get('collectionType') == 'Album' or ('collectionId' in row and 'trackId' not in row)) else 'track'
         item = normalize_apple_record(row, country, kind)
-        if not item: continue
+        if not item or not matches_apple_genre(item['genre'], genre): continue
         key=apple_dedupe_key(item)
         if key in unique:
             # Retain first entry and its rank; fill missing image from another storefront.
@@ -1209,44 +1305,45 @@ def merge_apple_results(pairs, max_results=SEARCH_RESULT_LIMIT):
     return list(unique.values())
 
 
-def apple_catalog_search(query, search_mode='track'):
+def apple_catalog_search(query, search_mode='track', *, country='', genre=''):
     if search_mode == 'album':
-        return search_albums('apple', query)
+        return search_albums('apple', query, country=country, genre=genre)
     # Combine both countries even when US already returned results, because
     # Japanese releases frequently do not appear in the US iTunes catalogue.
     pairs=[]
-    for country in ('US','JP'):
-        rows=apple_search_request(query,country,'song',150,
+    storefronts = apple_storefronts(country)
+    for storefront in storefronts:
+        rows=apple_search_request(query,storefront,'song',200 if genre else 150,
                                   'artistTerm' if search_mode == 'artist' else None)
-        pairs.extend((country,r) for r in rows if isinstance(r,dict))
-    results=merge_apple_results(pairs)
+        pairs.extend((storefront,r) for r in rows if isinstance(r,dict))
+    results=merge_apple_results(pairs, genre=genre)
     # A title such as MONOLITH may be indexed as an album even when its tracks
     # are missing from an ordinary song search. Try a well-matched album once.
     if search_mode == 'track':
         known_alias = SEARCH_ALIASES.get(query.strip())
         variants = [known_alias] if known_alias else []
         # If a compound query is not indexed, try its components as fallback.
-        if not results and len(query.split()) > 1:
+        if not (pairs if genre else results) and len(query.split()) > 1:
             variants.extend([query.split()[0], ' '.join(query.split()[1:])])
         for alias in [v for v in variants if v and v != query][:2]:
             extra_pairs=[]
-            for country in ('JP','US'):
-                extra_pairs.extend((country,r) for r in apple_search_request(alias,country,'song',100)
+            for storefront in reversed(storefronts):
+                extra_pairs.extend((storefront,r) for r in apple_search_request(alias,storefront,'song',200 if genre else 100)
                                    if isinstance(r,dict))
             # Prefer a known localized spelling even when the original query
             # already returned 50 less relevant matches.
             pairs = extra_pairs + pairs if alias == known_alias else pairs + extra_pairs
-            results=merge_apple_results(pairs)
+            results=merge_apple_results(pairs, genre=genre)
             if len(results) >= SEARCH_RESULT_LIMIT and not known_alias: break
         # Search for same-titled albums; expand only the closest exact album.
         # This fixes missing tracks without indiscriminately injecting unrelated
         # albums into generic queries, and preserves the original song titles.
         if len(results) < 25 and (not results or (query.isascii() and len(query.split()) <= 2)):
             album_pairs=[]
-            for country in ('US','JP'):
-                album_pairs += [(country, r) for r in apple_search_request(query,country,'album',40)
+            for storefront in storefronts:
+                album_pairs += [(storefront, r) for r in apple_search_request(query,storefront,'album',200 if genre else 40)
                                 if isinstance(r,dict)]
-            matching_albums=[a for a in merge_apple_results(album_pairs,60) if a.get('itemType') == 'album']
+            matching_albums=[a for a in merge_apple_results(album_pairs,60,genre=genre) if a.get('itemType') == 'album']
             query_key=artwork_key(query)
             exact_albums=[album for album in matching_albums
                           if artwork_key(album['title']) == query_key]
@@ -1262,10 +1359,11 @@ def apple_catalog_search(query, search_mode='track'):
                     tracks=fetch_album_tracks(album)
                     for t in tracks:
                         t.setdefault('releaseDate',album.get('releaseDate',''))
-                    results=merge_apple_results(pairs,120)
+                    results=merge_apple_results(pairs,120,genre=genre)
                     seen={apple_dedupe_key(r) for r in results}
                     for t in tracks:
-                        if apple_dedupe_key(t) not in seen:
+                        if (matches_apple_genre(t.get('genre') or album.get('genre'), genre)
+                                and apple_dedupe_key(t) not in seen):
                             t['searchRank']=len(results)
                             results.append(t)
                             seen.add(apple_dedupe_key(t))
@@ -1425,15 +1523,15 @@ def valid_lastfm_url(url):
         return False
 
 
-def search_albums(platform, query):
+def search_albums(platform, query, *, country='', genre=''):
     """Return album choices, not creatable song choices."""
     if platform == 'apple':
         pairs=[]
-        for country in ('US','JP'):
-            rows=apple_search_request(query,country,'album',125)
-            pairs.extend((country,row) for row in rows if isinstance(row,dict))
+        for storefront in apple_storefronts(country):
+            rows=apple_search_request(query,storefront,'album',200 if genre else 125)
+            pairs.extend((storefront,row) for row in rows if isinstance(row,dict))
         # Treat the search engine's order as a relevance-based popularity proxy.
-        return [a for a in merge_apple_results(pairs) if a['itemType'] == 'album']
+        return [a for a in merge_apple_results(pairs, genre=genre) if a['itemType'] == 'album']
     if platform == 'lastfm':
         albums = (lastfm_api('album.search', album=query, limit=70).get('results') or {}).get('albummatches') or {}
         rows = albums.get('album') or []
@@ -1462,7 +1560,7 @@ def fetch_album_tracks(album):
     if album.get('sourcePlatform') == 'apple':
         album_id = str(album.get('sourceId',''))
         country = album.get('storeCountry','US')
-        if not (album_id.isdigit() and country in ('US','JP')):
+        if not (album_id.isdigit() and country in APPLE_STOREFRONTS):
             raise APIError('앨범 정보를 다시 검색해 줘.',422)
         # Search API rate limit also applies to lookup requests.
         with APPLE_QUERY_LOCK:
@@ -1486,7 +1584,8 @@ def fetch_album_tracks(album):
                             'storeCountry':country, 'musicUrl':link[:500],
                             'artworkUrl':safe_artwork(row.get('artworkUrl100','')) or album.get('artworkUrl',''),
                             'durationMs':row.get('trackTimeMillis') or None,'isrc':'',
-                            'releaseDate':row.get('releaseDate',''),
+                            'releaseDate':row.get('releaseDate',''), 'genre':str(row.get('primaryGenreName') or '')[:80],
+                            'previewUrl':safe_apple_preview(row.get('previewUrl')),
                             'trackNumber':row.get('trackNumber',0)})
         return [t for t in results if t['title'] and t['artist']]
     if album.get('sourcePlatform') == 'lastfm':
@@ -1526,7 +1625,9 @@ def album_for_search_track(track):
     elif track.get('sourcePlatform') == 'apple' and track.get('sourceCatalog') == 'itunes_store':
         album_id = str(track.get('albumId') or '')
         country = track.get('storeCountry', 'US')
-        if not (album_id.isdigit() and country in ('US', 'JP')):
+        if country not in APPLE_STOREFRONTS:
+            raise APIError('이 곡의 스토어 정보를 다시 검색해 줘.', 422)
+        if not album_id.isdigit():
             # Backward compatibility for signed search results made before v5.8.
             # Resolve by track ID; NEVER guess by album title alone.
             tid = str(track.get('sourceId') or '')
@@ -1735,6 +1836,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/room-bubbles.css': ('room-bubbles.css', 'text/css; charset=utf-8'),
                   '/home.js': ('home.js', 'application/javascript; charset=utf-8'),
                   '/home.css': ('home.css', 'text/css; charset=utf-8'),
+                  '/catalog-filters.js': ('catalog-filters.js', 'application/javascript; charset=utf-8'),
+                  '/catalog-filters.css': ('catalog-filters.css', 'text/css; charset=utf-8'),
                   '/login-prism.webp': ('login-prism.webp', 'image/webp'),
                   '/fonts/bricolage.woff2': ('fonts/bricolage.woff2', 'font/woff2'),
                   '/fonts/plex-sans.woff2': ('fonts/plex-sans.woff2', 'font/woff2'),
@@ -1816,10 +1919,22 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             track_id = query.get('trackId', [''])[0]
             country = query.get('country', ['KR'])[0].upper()
-            if not re.fullmatch(r'[0-9]{1,20}', track_id) or country not in ('KR', 'US', 'JP'):
+            if not re.fullmatch(r'[0-9]{1,20}', track_id) or country not in APPLE_STOREFRONTS:
                 raise APIError('올바른 Apple 음원 ID를 사용해 줘.', 422)
             search_rate_limit(user['id'])
             return self.send_json({'track': apple_preview(track_id, country)})
+        room_preview = re.fullmatch(r'/api/rooms/([^/]+)/songs/([0-9]{1,18})/preview', route)
+        if method == 'GET' and room_preview:
+            code = clean_code(room_preview[1])
+            with db() as conn:
+                check_room(conn, code)
+                check_member(conn, code, user['id'])
+                song = conn.execute('SELECT * FROM songs WHERE id=? AND room_code=?',
+                                    (int(room_preview[2]), code)).fetchone()
+            if not song:
+                raise APIError('추천곡을 찾을 수 없어.', 404)
+            search_rate_limit(user['id'])
+            return self.send_json({'track': room_song_preview(song)})
         # Resolve album art progressively after song search. Only a signed
         # Last.fm result from this user can be resolved, so callers cannot
         # turn the endpoint into an arbitrary Apple search proxy.
@@ -1902,28 +2017,39 @@ class Handler(BaseHTTPRequestHandler):
             platform = params.get('platform', [''])[0]
             search_mode = params.get('kind', ['track'])[0]
             query = params.get('q', [''])[0].strip()
+            country = params.get('country', [''])[0].strip().upper()
+            genre = params.get('genre', [''])[0].strip().lower()
             if not 2 <= len(query) <= 80:
                 raise APIError('검색어는 2~80자로 입력해 줘.')
             if platform not in ('spotify', 'apple', 'lastfm'):
                 raise APIError('이 플랫폼에서는 아직 사이트 내 검색을 제공하지 않아.', 422)
             if search_mode not in ('track','artist','album'):
                 raise APIError('검색 유형이 올바르지 않아.', 422)
+            filtered = bool(country or genre)
+            if filtered and platform != 'apple':
+                raise APIError('장르와 국가·스토어 필터는 Apple 검색에서 쓸 수 있어.', 422)
+            if country and country not in APPLE_STOREFRONTS:
+                raise APIError('지원하는 국가·스토어를 선택해 줘.', 422)
+            if genre and genre not in APPLE_GENRE_KEYS:
+                raise APIError('지원하는 장르를 선택해 줘.', 422)
             search_rate_limit(user['id'])
             # Keep this cache short and not tied to a Spotify user session.
-            key = (platform, search_mode, query.casefold())
+            key = (platform, search_mode, query.casefold(), country, genre)
             with CACHE_LOCK:
                 cached = SEARCH_CACHE.get(key)
             if cached and cached[0] > time.time():
                 tracks = cached[1]
             else:
-                if search_mode == 'artist':
+                if filtered and search_mode == 'artist':
+                    tracks = search_artists('apple', query, country=country, genre=genre)
+                elif filtered:
+                    tracks = apple_catalog_search(query, search_mode, country=country, genre=genre)
+                elif search_mode == 'artist':
                     tracks = search_artists(platform, query)
                 elif search_mode == 'album':
                     tracks = search_albums(platform, query)
-                elif platform == 'lastfm':
-                    tracks = search_catalog(platform, query, search_mode)
                 else:
-                    tracks = search_catalog(platform, query if search_mode != 'artist' else query, search_mode)
+                    tracks = search_catalog(platform, query, search_mode)
                 tracks = [t for t in tracks if t.get('sourceId') and t.get('title') and t.get('artist') and t.get('musicUrl')]
                 with CACHE_LOCK:
                     SEARCH_CACHE[key] = (time.time() + 180, tracks[:SEARCH_RESULT_LIMIT])
@@ -1934,7 +2060,7 @@ class Handler(BaseHTTPRequestHandler):
                 response.append({**song, 'selectionToken': sign_selection(song, user['id'])})
             return self.send_json({'results': response, 'catalog':
                 response[0]['sourceCatalog'] if response else
-                ('apple_music' if platform == 'apple' and os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN') else
+                ('apple_music' if platform == 'apple' and not filtered and os.environ.get('APPLE_MUSIC_DEVELOPER_TOKEN') else
                  'itunes_store' if platform == 'apple' else 'lastfm' if platform == 'lastfm' else 'spotify')})
         if method == 'POST' and route == '/api/rooms':
             name = required_string(self.body(), 'name', 40)
