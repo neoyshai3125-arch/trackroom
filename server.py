@@ -1731,6 +1731,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/index.html': ('index.html', 'text/html; charset=utf-8'),
                   '/style.css': ('style.css', 'text/css; charset=utf-8'),
                   '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                  '/room-bubbles.js': ('room-bubbles.js', 'application/javascript; charset=utf-8'),
+                  '/room-bubbles.css': ('room-bubbles.css', 'text/css; charset=utf-8'),
                   '/home.js': ('home.js', 'application/javascript; charset=utf-8'),
                   '/home.css': ('home.css', 'text/css; charset=utf-8'),
                   '/login-prism.webp': ('login-prism.webp', 'image/webp'),

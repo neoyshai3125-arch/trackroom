@@ -10,17 +10,8 @@ let catalogViewInfo = null;
 let searchCounter = 0;
 let bubbleSelectedId = null;
 let bubbleLastRender = '';
-// TRACKROOM v6.4: the previous smallest zoom is now the starting view.
-// The furthest zoom-out fits approximately 50 bubble positions on the current screen.
-const DEFAULT_BUBBLE_ZOOM = 0.52;
-const MAX_BUBBLE_ZOOM = 2.15;
-const OVERVIEW_BUBBLE_COUNT = 50;
-let bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
-let bubbleRandomIndex = 0;
-let bubblePointerState = new Map();
-let bubbleDrag = null;
-let bubblePinch = null;
-let suppressBubbleClick = false;
+let roomBubbles = null;
+let lastShuffleSongId = null;
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -168,8 +159,9 @@ function showLanding() {
   $('roomView').classList.add('hidden');
   closeAddPanel();
   closeBubbleDetail();
-  bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
+  roomBubbles.clear();
   bubbleLastRender = '';
+  lastShuffleSongId = null;
   history.replaceState({}, '', '/');
   if (state.user) {
     dashboard.chooseTab('home');
@@ -180,14 +172,15 @@ function showLanding() {
 function goToRoom(code) {
   if ($('roomAccess').open) $('roomAccess').close();
   if (state.roomCode !== code) {
-    bubbleCanvasCamera = { x: 0, y: 0, zoom: DEFAULT_BUBBLE_ZOOM };
+    closeBubbleDetail();
+    roomBubbles.clear();
     bubbleLastRender = '';
-    bubbleSelectedId = null;
+    lastShuffleSongId = null;
   }
   closeRoomMenu(false);
   state.roomCode = code;
   document.body.classList.add('room-active');
-  document.querySelector('meta[name="theme-color"]').content = '#101213';
+  document.querySelector('meta[name="theme-color"]').content = '#fdfbff';
   $('landing').classList.add('hidden');
   $('roomView').classList.remove('hidden');
   history.replaceState({}, '', `/?room=${encodeURIComponent(code)}`);
@@ -241,46 +234,10 @@ function sourceLabel(url) {
     return '음악 링크';
   } catch { return '음악 링크'; }
 }
-function artGradient(title) {
-  const colors = [
-    'linear-gradient(135deg,#7f8364,#374839)',
-    'linear-gradient(135deg,#be9168,#73434b)',
-    'linear-gradient(135deg,#748da8,#42395d)',
-    'linear-gradient(135deg,#ad7598,#5b494b)',
-    'linear-gradient(135deg,#78a19a,#314e51)',
-    'linear-gradient(135deg,#afa76c,#575340)'
-  ];
+function artColor(title) {
+  const colors = ['#59654d', '#8c5b52', '#535978', '#79536c', '#3f696b', '#7e7350'];
   const n = [...title].reduce((a, c) => a+c.charCodeAt(0), 0);
   return colors[n%colors.length];
-}
-// -----------------------------------------------
-// TRACKROOM v5: spatial discovery canvas
-// -----------------------------------------------
-function bubblePosition(index) {
-  if (index === 0) return { x: 0, y: 0, size: 162 };
-  // A deterministic sunflower distribution: no rank or likes-based sizing.
-  const angle = index * 2.399963229728653;
-  const radius = 192 * Math.sqrt(index);
-  const size = 134 + (index * 37 % 25);
-  return { x: Math.round(Math.cos(angle) * radius), y: Math.round(Math.sin(angle) * radius), size };
-}
-function minimumBubbleZoom() {
-  const viewport = $('bubbleCanvas');
-  if (!viewport) return 0.12;
-  const width = viewport.clientWidth || window.innerWidth || 390;
-  const height = viewport.clientHeight || window.innerHeight || 740;
-  let extentX = 0;
-  let extentY = 0;
-  for (let i = 0; i < OVERVIEW_BUBBLE_COUNT; i++) {
-    const bubble = bubblePosition(i);
-    const radius = bubble.size / 2;
-    extentX = Math.max(extentX, Math.abs(bubble.x) + radius);
-    extentY = Math.max(extentY, Math.abs(bubble.y) + radius);
-  }
-  // Reserve padding for the room title and the mobile quick-action buttons.
-  const widthFit = width * 0.88 / (extentX * 2);
-  const heightFit = height * 0.83 / (extentY * 2);
-  return Math.min(DEFAULT_BUBBLE_ZOOM, Math.max(0.08, Math.min(widthFit, heightFit)));
 }
 // The iTunes Search API provides 100x100 artwork links. Apple CDN images
 // support larger size variants without an additional music-search request.
@@ -311,39 +268,24 @@ function bubbleProvider(song) {
   return song.sourceCatalog === 'itunes_store' ? 'iTunes Store' : song.sourceCatalog === 'lastfm' ? 'Last.fm' :
     (PLATFORM_NAMES[song.sourcePlatform] || sourceLabel(song.musicUrl));
 }
-function applyBubbleCamera() {
-  const {x, y, zoom} = bubbleCanvasCamera;
-  $('bubbleStage').style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoom})`;
-  $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`;
-  $('bubbleCanvas').classList.toggle('zoomed-out', zoom < .8);
-  $('bubbleCanvas').classList.toggle('zoomed-in', zoom > 1.3);
-}
 function renderSongs() {
-  // Bubble positions are stable and independent of catalog search sorting.
-  const songs = [...state.songs].sort((a,b) => Number(a.id) - Number(b.id));
-  const signature = `${state.sort}|` + songs.map(s => [s.id,s.title,s.artist,s.artworkUrl,s.likeCount,s.liked,s.nickname,s.note,s.startSeconds,s.endSeconds].join('|')).join('~');
+  const songs = [...state.songs].sort((a, b) => Number(a.id) - Number(b.id));
+  const signature = JSON.stringify(songs);
   if (signature !== bubbleLastRender) {
     bubbleLastRender = signature;
-    $('bubbleStage').innerHTML = songs.map((song, index) => {
-      const p = bubblePosition(index);
-      const radius = p.size / 2;
-      return `<button type="button" class="music-bubble${song.id === bubbleSelectedId?' bubble-active':''}" data-song-id="${song.id}"
-        style="--bubble-x:${p.x}px;--bubble-y:${p.y}px;--bubble-size:${p.size}px;--bubble-art:${artGradient(song.title)}"
-        aria-label="${escaped(song.title)}, ${escaped(song.artist)}, ${escaped(song.nickname)}님의 추천. 상세 보기">
-          <span class="bubble-sphere">${bubbleArtwork(song)}</span>
-          <span class="bubble-name">${escaped(song.title)}</span>
-          <span class="bubble-artist">${escaped(song.artist)}</span>
-          <span class="bubble-dot" aria-hidden="true"></span>
-        </button>`;
-    }).join('');
-    if (bubbleSelectedId !== null) {
-      const selected = songs.find(song => song.id === bubbleSelectedId);
-      if (selected) renderBubbleDetail(selected); else closeBubbleDetail();
-    }
+    if (bubbleSelectedId !== null && !songs.some(song => song.id === bubbleSelectedId)) closeBubbleDetail();
+    roomBubbles.setSongs(songs.map(song => ({
+      id: song.id,
+      title: song.title,
+      label: `${song.title}, ${song.artist}, ${song.nickname}님의 추천. 상세 보기`,
+      color: artColor(song.title),
+      artwork: bubbleArtwork(song)
+    })), bubbleSelectedId);
+    if (bubbleSelectedId !== null) renderBubbleDetail(songs.find(song => song.id === bubbleSelectedId));
   }
   $('bubbleCanvasEmpty').classList.toggle('hidden', songs.length > 0);
   $('bubbleCanvas').classList.toggle('is-empty', songs.length === 0);
-  applyBubbleCamera();
+  $('roomTrackCount').textContent = songs.length;
 }
 function renderBubbleDetail(song) {
   const owned = song.userId === state.user?.id;
@@ -353,7 +295,7 @@ function renderBubbleDetail(song) {
     : '<span class="detail-record">♫</span>';
   const range = song.startSeconds !== null && song.startSeconds !== undefined
     ? `<div class="bubble-detail-range">♫ 추천 구간: ${timeLabel(song.startSeconds)}${song.endSeconds !== null ? ' – ' + timeLabel(song.endSeconds) : '부터'}</div>` : '';
-  $('bubbleDetailBody').innerHTML = `<div class="bubble-detail-art" style="--bubble-art:${artGradient(song.title)}">${art}</div>
+  $('bubbleDetailBody').innerHTML = `<div class="bubble-detail-art" style="--bubble-art:${artColor(song.title)}">${art}</div>
     <p class="bubble-detail-eyebrow">${escaped(provider)} · ${escaped(song.nickname)}님의 추천</p>
     <h3>${escaped(song.title)}</h3><p class="bubble-detail-artist">${escaped(song.artist)}</p>
     ${song.note ? `<p class="bubble-detail-note">“${escaped(song.note)}”</p>` : ''}
@@ -370,13 +312,13 @@ function openBubbleDetail(songId) {
   const song = state.songs.find(song => song.id === songId);
   if (!song) return;
   bubbleSelectedId = songId;
-  $('bubbleStage').querySelectorAll('.music-bubble').forEach(el => el.classList.toggle('bubble-active', Number(el.dataset.songId)===songId));
+  roomBubbles.setSelected(songId);
   renderBubbleDetail(song);
 }
 function closeBubbleDetail() {
   bubbleSelectedId = null;
   $('bubbleDetail').classList.add('hidden');
-  $('bubbleStage').querySelectorAll('.bubble-active').forEach(el => el.classList.remove('bubble-active'));
+  roomBubbles.setSelected(null);
 }
 function openRoomMenu() {
   if (!state.roomCode || roomMenuOpen) return;
@@ -411,104 +353,20 @@ function closeAddPanel() {
   $('addPanelBackdrop').classList.add('hidden');
   $('openAddPanel').setAttribute('aria-expanded','false');
 }
-function setBubbleZoom(newZoom, clientX, clientY) {
-  const viewport = $('bubbleCanvas');
-  const rect = viewport.getBoundingClientRect();
-  const x = (clientX ?? (rect.left+rect.width/2)) - (rect.left + rect.width/2);
-  const y = (clientY ?? (rect.top+rect.height/2)) - (rect.top + rect.height/2);
-  const previousZoom = bubbleCanvasCamera.zoom;
-  const target = Math.min(MAX_BUBBLE_ZOOM, Math.max(minimumBubbleZoom(), newZoom));
-  const ratio = target / previousZoom;
-  bubbleCanvasCamera.x = x - (x - bubbleCanvasCamera.x) * ratio;
-  bubbleCanvasCamera.y = y - (y - bubbleCanvasCamera.y) * ratio;
-  bubbleCanvasCamera.zoom = target;
-  applyBubbleCamera();
-}
-function panToSongIndex(index) {
-  const position = bubblePosition(index);
-  const zoom = bubbleCanvasCamera.zoom;
-  bubbleCanvasCamera.x = -position.x * zoom;
-  bubbleCanvasCamera.y = -position.y * zoom;
-  applyBubbleCamera();
-}
 function initBubbleCanvas() {
-  const viewport = $('bubbleCanvas');
-  const stage = $('bubbleStage');
-  const localPosition = (event) => {
-    const r = viewport.getBoundingClientRect();
-    return { x: event.clientX - r.left - r.width/2, y: event.clientY - r.top - r.height/2 };
-  };
-  stage.addEventListener('click', e => {
-    if (suppressBubbleClick) { suppressBubbleClick = false; return; }
-    const bubble = e.target.closest('[data-song-id]');
-    if (bubble) openBubbleDetail(Number(bubble.dataset.songId));
+  const canvas = $('bubbleCanvas');
+  roomBubbles = window.TrackroomRoomBubbles.mount($('bubbleStage'), {
+    onSelect: openBubbleDetail,
+    onZoom: zoom => { $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`; }
   });
-  viewport.addEventListener('pointerdown', e => {
-    if (e.target.closest('.canvas-controls, .bubble-detail, .canvas-empty')) return;
-    bubblePointerState.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if (bubblePointerState.size === 1) {
-      bubbleDrag = { x:e.clientX, y:e.clientY, originX:bubbleCanvasCamera.x, originY:bubbleCanvasCamera.y, moved:false };
-    } else if (bubblePointerState.size === 2) {
-      const [p1,p2] = [...bubblePointerState.values()];
-      const dx=p1.x-p2.x, dy=p1.y-p2.y;
-      bubblePinch = { distance:Math.hypot(dx,dy), zoom:bubbleCanvasCamera.zoom, center:{ x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 } };
-      bubbleDrag=null;
-    }
-    if (e.pointerType !== 'mouse') viewport.setPointerCapture(e.pointerId);
-  });
-  viewport.addEventListener('pointermove', e => {
-    if (!bubblePointerState.has(e.pointerId)) return;
-    bubblePointerState.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if (bubblePointerState.size === 2 && bubblePinch) {
-      const [a,b] = [...bubblePointerState.values()];
-      const dx=a.x-b.x,dy=a.y-b.y;
-      setBubbleZoom(bubblePinch.zoom * Math.hypot(dx,dy)/bubblePinch.distance, (a.x+b.x)/2,(a.y+b.y)/2);
-      suppressBubbleClick = true;
-      return;
-    }
-    if (!bubbleDrag) return;
-    const dx=e.clientX-bubbleDrag.x,dy=e.clientY-bubbleDrag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 6) {
-      bubbleDrag.moved=true;
-      if (e.pointerType === 'mouse' && !viewport.hasPointerCapture(e.pointerId)) viewport.setPointerCapture(e.pointerId);
-    }
-    if (bubbleDrag.moved) {
-      bubbleCanvasCamera.x=bubbleDrag.originX+dx;
-      bubbleCanvasCamera.y=bubbleDrag.originY+dy;
-      viewport.classList.add('is-dragging');
-      applyBubbleCamera();
-    }
-  });
-  const releasePointer = e => {
-    if (bubbleDrag?.moved || bubblePinch) {
-      suppressBubbleClick=true;
-      // A synthetic click can follow pointerup; clear suppression after the event loop.
-      setTimeout(() => { suppressBubbleClick=false; }, 0);
-    }
-    bubblePointerState.delete(e.pointerId);
-    bubbleDrag=null;
-    bubblePinch=null;
-    viewport.classList.remove('is-dragging');
-    if (viewport.hasPointerCapture(e.pointerId)) viewport.releasePointerCapture(e.pointerId);
-  };
-  viewport.addEventListener('pointerup',releasePointer);
-  viewport.addEventListener('pointercancel',releasePointer);
-  window.addEventListener('resize', () => {
-    if (!document.body.classList.contains('room-active')) return;
-    if (bubbleCanvasCamera.zoom < minimumBubbleZoom()) setBubbleZoom(minimumBubbleZoom());
-  });
-  viewport.addEventListener('wheel',e=>{if (e.target.closest('.bubble-detail')) return; e.preventDefault(); setBubbleZoom(bubbleCanvasCamera.zoom * (e.deltaY > 0 ? .9 : 1.1), e.clientX,e.clientY);},{passive:false});
-  viewport.addEventListener('keydown', e=> {
-    if (e.target !== viewport) return;
-    const move=65;
-    if (e.key==='ArrowLeft') bubbleCanvasCamera.x+=move;
-    else if (e.key==='ArrowRight') bubbleCanvasCamera.x-=move;
-    else if (e.key==='ArrowUp') bubbleCanvasCamera.y+=move;
-    else if (e.key==='ArrowDown') bubbleCanvasCamera.y-=move;
-    else if (e.key==='+' || e.key==='=') setBubbleZoom(bubbleCanvasCamera.zoom*1.12);
-    else if (e.key==='-') setBubbleZoom(bubbleCanvasCamera.zoom/1.12);
+  const directions = {ArrowLeft: [-65, 0], ArrowRight: [65, 0], ArrowUp: [0, -65], ArrowDown: [0, 65]};
+  canvas.addEventListener('keydown', event => {
+    if (event.target !== canvas && !event.target.closest('.music-bubble')) return;
+    if (Object.prototype.hasOwnProperty.call(directions, event.key)) roomBubbles.pan(...directions[event.key]);
+    else if (event.key === '+' || event.key === '=') roomBubbles.zoomBy(1.12);
+    else if (event.key === '-') roomBubbles.zoomBy(1 / 1.12);
     else return;
-    e.preventDefault(); applyBubbleCamera();
+    event.preventDefault();
   });
   $('bubbleRestoreCovers').addEventListener('click', async () => {
     if (!state.roomCode) return;
@@ -521,15 +379,15 @@ function initBubbleCanvas() {
     } catch(e) { toast(e.message,true); }
     finally { button.disabled = false; }
   });
-  $('bubbleZoomIn').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom*1.2));
-  $('bubbleZoomOut').addEventListener('click',()=>setBubbleZoom(bubbleCanvasCamera.zoom/1.2));
-  const resetView = () => { bubbleCanvasCamera={x:0,y:0,zoom:DEFAULT_BUBBLE_ZOOM}; applyBubbleCamera(); closeBubbleDetail(); };
+  $('bubbleZoomIn').addEventListener('click', () => roomBubbles.zoomBy(1.2));
+  $('bubbleZoomOut').addEventListener('click', () => roomBubbles.zoomBy(1 / 1.2));
+  const resetView = () => { roomBubbles.reset(); closeBubbleDetail(); };
   const shuffleView = () => {
     if (state.songs.length < 2) return toast('새로운 영역을 탐색하려면 노래를 두 곡 이상 등록해 줘.');
-    bubbleRandomIndex = (bubbleRandomIndex + 1 + Math.floor(Math.random()*Math.max(1,state.songs.length-1))) % state.songs.length;
-    bubbleCanvasCamera.zoom = DEFAULT_BUBBLE_ZOOM;
-    panToSongIndex(bubbleRandomIndex);
+    const candidates = state.songs.filter(song => song.id !== lastShuffleSongId);
+    lastShuffleSongId = candidates[Math.floor(Math.random() * candidates.length)].id;
     closeBubbleDetail();
+    roomBubbles.focus(lastShuffleSongId);
   };
   $('bubbleReset').addEventListener('click',resetView);
   $('mobileFocus').addEventListener('click',resetView);

@@ -1,0 +1,15 @@
+{
+  "name": "trackroom-room-bubbles",
+  "private": true,
+  "scripts": {
+    "build": "node build-room-bubbles.cjs"
+  },
+  "dependencies": {
+    "react": "16.14.0",
+    "react-bubble-ui": "1.1.2",
+    "react-dom": "16.14.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}
