@@ -15,7 +15,8 @@ let lastShuffleSongId = null;
 let roomSearchFilters;
 const roomPreviewHistory = [];
 const roomPreviewSeen = new Set();
-let roomPlaybackScrub = null; // draft position during circular ring dragging
+let roomPlaybackScrub = null; // draft position while dragging the whole record
+let roomPlaybackRotation = 0; // accumulated visual rotation of the album artwork
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -392,42 +393,73 @@ function renderRoomPlaybackDial(preview = dashboard.getPreview()) {
   $('roomPlaybackOverlay').style.setProperty('--room-preview-progress', String(fraction * 100));
 }
 
+// Angles are measured around the entire album disc, not only the rim.
+// Use the angular difference from the previous touch position so placing a
+// finger anywhere does NOT jump the preview to that absolute clock position.
 function roomPlaybackAngle(event) {
   const bounds = $('roomPlaybackCover').getBoundingClientRect();
   const dx = event.clientX - (bounds.left + bounds.width / 2);
   const dy = event.clientY - (bounds.top + bounds.height / 2);
-  if (dx === 0 && dy === 0) return 0;
-  return ((Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
+  // Near the centre atan2 becomes unstable. The play/pause button owns
+  // this area; ignore residual touch events that begin just outside it.
+  if (Math.hypot(dx, dy) < bounds.width * .13) return null;
+  return Math.atan2(dy, dx);
 }
-
+function shortestPlaybackTurn(current, last) {
+  // Follow the shortest angular movement across the -PI / +PI boundary.
+  return Math.atan2(Math.sin(current - last), Math.cos(current - last));
+}
 function initRoomPlaybackDial() {
   const dial = $('roomPlaybackDial');
+  const cover = $('roomPlaybackCover').parentElement;
   const previewDuration = () => Math.max(0, Number(dashboard.getPreview().duration) || 0);
   dial.addEventListener('pointerdown', event => {
     const duration = previewDuration();
     if (event.button !== 0 || !duration || roomPlaybackScrub || !$('roomPlaybackOverlay').open) return;
+    const angle = roomPlaybackAngle(event);
+    if (angle === null) return;
     event.preventDefault();
-    roomPlaybackScrub = {id: event.pointerId, position: roomPlaybackAngle(event) * duration};
+    roomPlaybackScrub = {
+      id: event.pointerId, angle, moved: false,
+      position: Math.min(duration, Math.max(0, Number(dashboard.getPreview().position) || 0))
+    };
     dial.setPointerCapture(event.pointerId);
     dial.classList.add('scrubbing');
+    cover.classList.add('scrubbing');
     renderRoomPlaybackDial();
   });
   dial.addEventListener('pointermove', event => {
-    if (!roomPlaybackScrub || roomPlaybackScrub.id !== event.pointerId) return;
-    roomPlaybackScrub.position = roomPlaybackAngle(event) * previewDuration();
+    const current = roomPlaybackScrub;
+    if (!current || current.id !== event.pointerId) return;
+    const angle = roomPlaybackAngle(event);
+    if (angle === null) return;
+    const change = shortestPlaybackTurn(angle, current.angle);
+    current.angle = angle;
+    if (Math.abs(change) < .001) return;
+    current.moved = true;
+    const duration = previewDuration();
+    current.position = Math.max(0, Math.min(duration - .05,
+      current.position + change / (2 * Math.PI) * duration));
+    // The cover artwork turns with the finger, while the progress rim stays
+    // fixed and reflects the new listening position.
+    roomPlaybackRotation += change * 180 / Math.PI;
+    cover.style.setProperty('--room-scratch-rotation', `${roomPlaybackRotation}deg`);
     renderRoomPlaybackDial();
   });
   const finish = event => {
-    if (!roomPlaybackScrub || roomPlaybackScrub.id !== event.pointerId) return;
-    const position = roomPlaybackScrub.position;
-    const commit = event.type === 'pointerup';
+    const current = roomPlaybackScrub;
+    if (!current || current.id !== event.pointerId) return;
+    const commit = event.type === 'pointerup' && current.moved;
+    const position = current.position;
     roomPlaybackScrub = null;
     dial.classList.remove('scrubbing');
+    cover.classList.remove('scrubbing');
     if (commit) dashboard.seekPreview(position);
     renderRoomPlaybackDial();
     if (dial.hasPointerCapture(event.pointerId)) dial.releasePointerCapture(event.pointerId);
   };
   for (const kind of ['pointerup','pointercancel','lostpointercapture']) dial.addEventListener(kind, finish);
+  // Keep the same keyboard accessibility as the previous annular seek control.
   dial.addEventListener('keydown', event => {
     const offsets = {ArrowLeft:-5, ArrowDown:-5, ArrowRight:5, ArrowUp:5};
     const duration = previewDuration();
@@ -624,7 +656,13 @@ function initBubbleCanvas() {
   $('roomPlaybackPrevious').addEventListener('click', () => roomPreviewAction('previous'));
   $('roomPlaybackNext').addEventListener('click', () => roomPreviewAction('next'));
   initRoomPlaybackDial();
-  playbackOverlay.addEventListener('close', () => { roomPlaybackScrub = null; });
+  playbackOverlay.addEventListener('close', () => {
+    roomPlaybackScrub = null;
+    roomPlaybackRotation = 0;
+    $('roomPlaybackDial').classList.remove('scrubbing');
+    $('roomPlaybackCover').parentElement.classList.remove('scrubbing');
+    $('roomPlaybackCover').parentElement.style.removeProperty('--room-scratch-rotation');
+  });
   $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
     playbackOverlay.close();

@@ -507,30 +507,27 @@ body.room-active .room-playback-overlay[open] > .room-preview-bar {
   body.room-active .room-playback-feature h2 { font-size: 18px; }
   body.room-active .room-playback-overlay[open] { padding-top: 10px; }
 }
-/* The DJ-style circular seek target covers ONLY the playback RIM, not the art
-   or centered pause control, so center play/pause stays easy to tap. */
+/* v6.9.4: the whole album surface, not just its progress rim, is a DJ
+   scratch pad. The central play/pause button remains ABOVE it (z-index 4). */
+body.room-active .room-playback-cover { touch-action: none; }
 body.room-active .room-playback-dial {
   position: absolute;
   z-index: 3;
-  inset: -9px;
+  inset: 0;
   border-radius: 50%;
-  pointer-events: none;
+  cursor: grab;
+  pointer-events: auto;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
+body.room-active .room-playback-dial[aria-disabled="true"] { cursor: default; }
+body.room-active .room-playback-dial.scrubbing { cursor: grabbing; }
 body.room-active .room-playback-dial svg {
   display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
   pointer-events: none;
-  touch-action: none;
 }
-body.room-active .room-playback-dial svg circle:first-child {
-  pointer-events: stroke;
-  cursor: grab;
-}
-body.room-active .room-playback-dial.scrubbing svg circle:first-child { cursor: grabbing; }
-body.room-active .room-playback-dial[aria-disabled="true"] svg circle:first-child { cursor: default; }
 body.room-active #roomPlaybackHandle {
   fill: var(--room-violet);
   stroke: #fff;
@@ -539,9 +536,15 @@ body.room-active #roomPlaybackHandle {
 }
 body.room-active .room-playback-dial:focus-visible {
   outline: 3px solid var(--room-violet);
-  outline-offset: 10px;
+  outline-offset: 7px;
 }
-body.room-active .room-playback-toggle { z-index: 4; }
+body.room-active .room-playback-cover > img,
+body.room-active .room-playback-cover > .room-playback-no-cover {
+  transform: rotate(var(--room-scratch-rotation, 0deg));
+  transform-origin: center;
+  pointer-events: none;
+}
+body.room-active .room-playback-toggle { z-index: 4; touch-action: manipulation; }
 @media (prefers-reduced-motion: reduce) {
   body.room-active.room-has-active-preview #bubbleStage .room-bubble-tile { transition: none; }
 }

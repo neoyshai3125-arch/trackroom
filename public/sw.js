@@ -1,8 +1,8 @@
-/* TRACKROOM v6.9.3 — public app shell. Never cache account, room or API data. */
-const SHELL_CACHE = 'trackroom-shell-v6.9.3';
+/* TRACKROOM v6.9.4 — public app shell. Never cache account, room or API data. */
+const SHELL_CACHE = 'trackroom-shell-v6.9.4';
 const SHELL_FILES = [
-  '/offline.html', '/style.css?v=6.9.3', '/app.js?v=6.9.3', '/room-bubbles.js?v=6.9.3', '/room-bubbles.css?v=6.9.3', '/home.css?v=6.9.3', '/home.js?v=6.9.3',
-  '/catalog-filters.js?v=6.9.3', '/catalog-filters.css?v=6.9.3',
+  '/offline.html', '/style.css?v=6.9.4', '/app.js?v=6.9.4', '/room-bubbles.js?v=6.9.4', '/room-bubbles.css?v=6.9.4', '/home.css?v=6.9.4', '/home.js?v=6.9.4',
+  '/catalog-filters.js?v=6.9.4', '/catalog-filters.css?v=6.9.4',
   '/login-prism.webp', '/fonts/bricolage.woff2', '/fonts/plex-sans.woff2', '/fonts/plex-mono.woff2',
   '/favicon.svg', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png',
