@@ -15,6 +15,7 @@ let lastShuffleSongId = null;
 let roomSearchFilters;
 const roomPreviewHistory = [];
 const roomPreviewSeen = new Set();
+let roomPlaybackScrub = null; // draft position during circular ring dragging
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -372,6 +373,73 @@ function restoreRoomPreviewBar() {
   if (bar.parentElement === overlay) overlay.parentElement.insertBefore(bar, overlay);
 }
 
+// Same clockwise time-to-angle conversion as Home's circular DJ dial.
+// Preview time is committed to the EXISTING audio element on pointer release.
+function renderRoomPlaybackDial(preview = dashboard.getPreview()) {
+  const dial = $('roomPlaybackDial');
+  const duration = Math.max(0, Number(preview.duration) || 0);
+  const position = Math.max(0, Math.min(duration,
+    roomPlaybackScrub ? roomPlaybackScrub.position : (Number(preview.position) || 0)));
+  const fraction = duration ? position / duration : 0;
+  const angle = fraction * Math.PI * 2 - Math.PI / 2;
+  const handle = $('roomPlaybackHandle');
+  handle.setAttribute('cx', (50 + Math.cos(angle) * 47).toFixed(3));
+  handle.setAttribute('cy', (50 + Math.sin(angle) * 47).toFixed(3));
+  dial.setAttribute('aria-disabled', String(!duration));
+  dial.setAttribute('aria-valuemax', String(Math.floor(duration)));
+  dial.setAttribute('aria-valuenow', String(Math.floor(position)));
+  dial.setAttribute('aria-valuetext', `${timeLabel(position)} / ${timeLabel(duration)}`);
+  $('roomPlaybackOverlay').style.setProperty('--room-preview-progress', String(fraction * 100));
+}
+
+function roomPlaybackAngle(event) {
+  const bounds = $('roomPlaybackCover').getBoundingClientRect();
+  const dx = event.clientX - (bounds.left + bounds.width / 2);
+  const dy = event.clientY - (bounds.top + bounds.height / 2);
+  if (dx === 0 && dy === 0) return 0;
+  return ((Math.atan2(dy, dx) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
+}
+
+function initRoomPlaybackDial() {
+  const dial = $('roomPlaybackDial');
+  const previewDuration = () => Math.max(0, Number(dashboard.getPreview().duration) || 0);
+  dial.addEventListener('pointerdown', event => {
+    const duration = previewDuration();
+    if (event.button !== 0 || !duration || roomPlaybackScrub || !$('roomPlaybackOverlay').open) return;
+    event.preventDefault();
+    roomPlaybackScrub = {id: event.pointerId, position: roomPlaybackAngle(event) * duration};
+    dial.setPointerCapture(event.pointerId);
+    dial.classList.add('scrubbing');
+    renderRoomPlaybackDial();
+  });
+  dial.addEventListener('pointermove', event => {
+    if (!roomPlaybackScrub || roomPlaybackScrub.id !== event.pointerId) return;
+    roomPlaybackScrub.position = roomPlaybackAngle(event) * previewDuration();
+    renderRoomPlaybackDial();
+  });
+  const finish = event => {
+    if (!roomPlaybackScrub || roomPlaybackScrub.id !== event.pointerId) return;
+    const position = roomPlaybackScrub.position;
+    const commit = event.type === 'pointerup';
+    roomPlaybackScrub = null;
+    dial.classList.remove('scrubbing');
+    if (commit) dashboard.seekPreview(position);
+    renderRoomPlaybackDial();
+    if (dial.hasPointerCapture(event.pointerId)) dial.releasePointerCapture(event.pointerId);
+  };
+  for (const kind of ['pointerup','pointercancel','lostpointercapture']) dial.addEventListener(kind, finish);
+  dial.addEventListener('keydown', event => {
+    const offsets = {ArrowLeft:-5, ArrowDown:-5, ArrowRight:5, ArrowUp:5};
+    const duration = previewDuration();
+    if (!duration || !(event.key in offsets || event.key === 'Home' || event.key === 'End')) return;
+    event.preventDefault();
+    const now = Number(dashboard.getPreview().position) || 0;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? duration : now + offsets[event.key];
+    dashboard.seekPreview(Math.max(0, Math.min(duration - .05, next)));
+    renderRoomPlaybackDial();
+  });
+}
+
 function openRoomPlayback() {
   const overlay = $('roomPlaybackOverlay');
   const preview = dashboard.getPreview();
@@ -401,6 +469,7 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   const overlay = $('roomPlaybackOverlay');
   $('roomPreviewBar').classList.toggle('hidden', !active);
   $('roomView').classList.toggle('has-room-preview', active);
+  document.body.classList.toggle('room-has-active-preview', active);
   const previous = active && roomPreviewHistory.some(id => state.songs.some(item => item.id === id && id !== song.id));
   const next = active && state.songs.length > 1;
   roomBubbles?.setPreview(active ? {id: song.id, playing: preview.playing, loading: preview.loading, previous, next} : null);
@@ -442,7 +511,7 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   if (!overlay.open) return;
   updateRoomPreviewCover($('roomPlaybackCover'), preview.cover, 600);
   overlay.style.setProperty('--room-playback-art', artColor(song.title));
-  overlay.style.setProperty('--room-preview-progress', String(progress));
+  renderRoomPlaybackDial(preview);
   $('roomPlaybackArtist').textContent = song.artist;
   $('roomPlaybackToggle').setAttribute('aria-label', playLabel);
   $('roomPlaybackIcon').setAttribute('d', playPath);
@@ -554,6 +623,8 @@ function initBubbleCanvas() {
   $('roomPlaybackToggle').addEventListener('click', () => roomPreviewAction('toggle'));
   $('roomPlaybackPrevious').addEventListener('click', () => roomPreviewAction('previous'));
   $('roomPlaybackNext').addEventListener('click', () => roomPreviewAction('next'));
+  initRoomPlaybackDial();
+  playbackOverlay.addEventListener('close', () => { roomPlaybackScrub = null; });
   $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
     playbackOverlay.close();

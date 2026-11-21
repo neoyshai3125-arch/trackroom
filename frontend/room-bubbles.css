@@ -415,13 +415,18 @@ body.room-active .room-playback-overlay::backdrop {
 }
 .room-playback-overlay button:focus-visible { outline:2px solid var(--room-violet); outline-offset:3px; }
 
-/* v6.9.2: approved two-mode player geometry. Keep album bubbles flat. */
-/* Browsing: the active cover is 1.5x the native viewport-scaled tile. */
-body.room-active #bubbleStage .room-bubble-tile:has(> .room-bubble-progress) {
-  transform: scale(calc(var(--viewport-bubble-scale, 1) * 1.5));
+/* v6.9.3: keep the selected cover 1.5x NEARBY covers, not 1.5x the
+   already large center cover. Shrink inactive covers while playing so
+   their lattice spacing remains clear (no overlapping 350px center). */
+body.room-active.room-has-active-preview #bubbleStage .room-bubble-tile {
+  transform: scale(calc(var(--viewport-bubble-scale, 1) * .76));
+  transition: transform 180ms ease-out;
+}
+body.room-active.room-has-active-preview #bubbleStage .room-bubble-tile:has(> .room-bubble-progress) {
+  transform: scale(calc(var(--viewport-bubble-scale, 1) * 1.14));
   z-index: 7;
 }
-body.room-active #bubbleStage ._3cleF:has(> .room-bubble-tile > .room-bubble-progress) {
+body.room-active.room-has-active-preview #bubbleStage ._3cleF:has(> .room-bubble-tile > .room-bubble-progress) {
   z-index: 7;
 }
 /* Browsing controls: three unframed glyphs positioned INSIDE the cover. */
@@ -501,4 +506,42 @@ body.room-active .room-playback-overlay[open] > .room-preview-bar {
   body.room-active .room-playback-wheel .room-playback-cover { width: min(var(--room-playback-diameter, 204px), 100%, 210px, 36dvh); }
   body.room-active .room-playback-feature h2 { font-size: 18px; }
   body.room-active .room-playback-overlay[open] { padding-top: 10px; }
+}
+/* The DJ-style circular seek target covers ONLY the playback RIM, not the art
+   or centered pause control, so center play/pause stays easy to tap. */
+body.room-active .room-playback-dial {
+  position: absolute;
+  z-index: 3;
+  inset: -9px;
+  border-radius: 50%;
+  pointer-events: none;
+  touch-action: none;
+}
+body.room-active .room-playback-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  touch-action: none;
+}
+body.room-active .room-playback-dial svg circle:first-child {
+  pointer-events: stroke;
+  cursor: grab;
+}
+body.room-active .room-playback-dial.scrubbing svg circle:first-child { cursor: grabbing; }
+body.room-active .room-playback-dial[aria-disabled="true"] svg circle:first-child { cursor: default; }
+body.room-active #roomPlaybackHandle {
+  fill: var(--room-violet);
+  stroke: #fff;
+  stroke-width: 1.3;
+  pointer-events: none;
+}
+body.room-active .room-playback-dial:focus-visible {
+  outline: 3px solid var(--room-violet);
+  outline-offset: 10px;
+}
+body.room-active .room-playback-toggle { z-index: 4; }
+@media (prefers-reduced-motion: reduce) {
+  body.room-active.room-has-active-preview #bubbleStage .room-bubble-tile { transition: none; }
 }
