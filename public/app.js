@@ -904,20 +904,20 @@ function renderCatalogResults() {
     const label = escaped(song.title);
     if (song.itemType === 'artist') {
       const descriptor = song.genre ? escaped(song.genre) : escaped(catalogLabel(song.sourceCatalog));
-      return `<div class="catalog-result catalog-artist-result" data-track-index="${i}" role="listitem"><button class="catalog-artist-main" type="button" data-index="${i}" data-catalog-action="artist" aria-label="${label} 아티스트의 앨범과 곡 보기">${artistPortrait(song)}<span class="catalog-result-info"><strong>${label}</strong><span>아티스트 프로필</span><small>${descriptor}</small></span><span class="catalog-choose">프로필 ↗</span></button></div>`;
+      return `<div class="catalog-result catalog-artist-result dash-row" data-track-index="${i}" role="listitem"><button class="catalog-artist-main dash-row-open" type="button" data-index="${i}" data-catalog-action="artist" aria-label="${label} 아티스트의 앨범과 곡 보기"><span class="dash-row-art is-artist">${artistPortrait(song)}</span><span class="catalog-result-info dash-row-text"><strong>${label}</strong><small>아티스트 · ${descriptor}</small></span><span class="catalog-choose dash-row-chevron" aria-hidden="true">›</span></button></div>`;
     }
     const isAlbum = song.itemType === 'album';
     const art = song.artworkUrl
       ? `<img src="${escaped(highResArtworkUrl(song.artworkUrl))}" data-original-src="${escaped(song.artworkUrl)}" loading="lazy" alt="" onerror="if(!this.dataset.retriedOriginal && this.src!==this.dataset.originalSrc){this.dataset.retriedOriginal='1';this.src=this.dataset.originalSrc;}else{this.parentElement.textContent='♫'}" />`
       : '<span class="no-art">♫</span>';
-    const details = `<span class="catalog-result-info"><strong>${label}</strong><span>${escaped(song.artist)}</span><small>${isAlbum ? '앨범 · 전체 수록곡' : escaped(catalogLabel(song.sourceCatalog))}${!isAlbum && song.album ? ' · '+escaped(song.album) : ''}${!isAlbum && song.durationMs ? ' · '+formatDuration(song.durationMs) : ''}</small></span>`;
+    const meta = [song.artist, isAlbum ? '앨범' : (song.album || ''), !isAlbum && song.durationMs ? formatDuration(song.durationMs) : ''].filter(Boolean).map(escaped).join(' · ');
+    const details = `<span class="catalog-result-info dash-row-text"><strong>${label}</strong><small>${meta}</small></span>`;
     const artLabel = escaped(isAlbum ? `${song.title} 앨범 수록곡 보기` : `${song.title}의 앨범 수록곡 보기`);
     const cover = isAlbumView
-      ? `<span class="catalog-art">${art}</span>`
-      : `<button class="catalog-art catalog-art-button" type="button" data-index="${i}" data-catalog-action="album" title="앨범 전체 보기" aria-label="${artLabel}">${art}<span class="album-art-hint" aria-hidden="true">↗</span></button>`;
+      ? `<span class="catalog-art dash-row-art">${art}</span>`
+      : `<button class="catalog-art catalog-art-button dash-row-art" type="button" data-index="${i}" data-catalog-action="album" title="앨범 전체 보기" aria-label="${artLabel}">${art}<span class="album-art-hint" aria-hidden="true">↗</span></button>`;
     const action = isAlbum ? 'album' : 'select';
-    const cta = isAlbum ? '수록곡 ↗' : '선택 ↗';
-    return `<div class="catalog-result" data-track-index="${i}" role="listitem">${cover}<button type="button" class="catalog-result-main" data-index="${i}" data-catalog-action="${action}" aria-label="${label} ${isAlbum ? '앨범 열기' : '추천곡 선택'}">${details}<span class="catalog-choose">${cta}</span></button></div>`;
+    return `<div class="catalog-result dash-row" data-track-index="${i}" role="listitem">${cover}<button type="button" class="catalog-result-main dash-row-open" data-index="${i}" data-catalog-action="${action}" aria-label="${label} ${isAlbum ? '앨범 열기' : '추천곡 선택'}">${details}<span class="catalog-choose dash-row-chevron" aria-hidden="true">›</span></button></div>`;
   }).join('');
 }
 function clearAlbumNavigation() {

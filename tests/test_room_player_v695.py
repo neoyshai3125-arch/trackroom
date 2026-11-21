@@ -1,4 +1,4 @@
-"""v6.9.5: circular seek remains, the artwork itself never spins."""
+"""v6.9.6: circular seek remains, the artwork itself never spins."""
 from pathlib import Path
 from unittest import TestCase
 
@@ -25,7 +25,7 @@ class TestStationaryAlbumArt(TestCase):
     def test_cache_and_visible_version(self):
         html = (ROOT / 'public/index.html').read_text()
         sw = (ROOT / 'public/sw.js').read_text()
-        self.assertIn('v6.9.5</span>', html)
-        self.assertIn('/app.js?v=6.9.5', html)
-        self.assertIn('trackroom-shell-v6.9.5', sw)
-        self.assertIn('/room-bubbles.css?v=6.9.5', sw)
+        self.assertIn('v6.9.6</span>', html)
+        self.assertIn('/app.js?v=6.9.6', html)
+        self.assertIn('trackroom-shell-v6.9.6', sw)
+        self.assertIn('/room-bubbles.css?v=6.9.6', sw)

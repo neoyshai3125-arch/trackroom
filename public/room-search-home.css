@@ -1,0 +1,227 @@
+/* TRACKROOM v6.9.6: Room search mirrors the home Music Explore controls and rows.
+   Home's existing .dash-row styles are reused; only room-scoped adjustments live here. */
+body.room-active #addPanel {
+  --dash-paper: #fcfbff;
+  --dash-ink: #241633;
+  --dash-muted: #645c71;
+  --dash-line: #e6ddee;
+  --dash-violet: #6234a5;
+  color: var(--dash-ink);
+  background: var(--dash-paper);
+  border-color: var(--dash-line);
+  font-family: var(--dash-sans, system-ui, sans-serif);
+  box-shadow: -18px 0 56px #32204e26;
+}
+body.room-active #addPanel .add-panel-close {
+  color: var(--dash-violet);
+  border: 1px solid var(--dash-line);
+  background: #f5eefb;
+  width: 42px;
+  height: 42px;
+}
+body.room-active #addPanel .room-home-search-heading {
+  clear: both;
+  padding-top: 9px;
+  margin-bottom: 16px;
+}
+body.room-active #addPanel .room-home-search-heading h2 {
+  margin: 0 0 9px;
+  font-size: 24px;
+  line-height: 1.3;
+  letter-spacing: -.035em;
+}
+body.room-active #addPanel .room-home-search-heading p {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.room-active #catalogSearchForm {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto auto;
+  align-items: start;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+body.room-active #catalogSearchForm > :is(input,select) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  min-height: 48px;
+  margin: 0;
+  padding: 10px 13px;
+  color: var(--dash-ink);
+  border: 1px solid #dcd1eb;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: none;
+  font: 400 16px var(--dash-sans, system-ui);
+}
+body.room-active #catalogSearchForm > select {
+  width: auto;
+  max-width: 88px;
+  padding-inline: 6px;
+}
+body.room-active #catalogSearchForm > input::placeholder { color: #756986; }
+body.room-active #catalogSearchForm > :is(input,select):focus {
+  border-color: var(--dash-violet);
+  box-shadow: 0 0 0 3px #c8b6eb65;
+  outline: none;
+}
+body.room-active #catalogSearchForm > button[type="submit"] {
+  box-sizing: border-box;
+  min-height: 48px;
+  margin: 0;
+  padding: 8px 12px;
+  color: #fff;
+  border: 1px solid var(--dash-violet);
+  border-radius: 10px;
+  background: var(--dash-violet);
+  font: 700 14px var(--dash-sans, system-ui);
+  white-space: nowrap;
+}
+body.room-active #catalogSearchForm > button[type="submit"]:disabled { opacity: .6; cursor: progress; }
+body.room-active #catalogSearchForm .catalog-filter-region {
+  grid-column: 1 / -1;
+  padding-top: 2px;
+  color: var(--dash-ink);
+}
+body.room-active #catalogSearchForm .catalog-filter-fields { gap: 8px; }
+body.room-active #catalogSearchForm .catalog-filter-description { color: var(--dash-muted); }
+body.room-active #catalogSearchForm .catalog-filter-fields select {
+  color: var(--dash-ink);
+  background: #fff;
+  border-color: #d8ccea;
+}
+body.room-active #catalogSearchForm .room-search-options {
+  grid-column: 1 / -1;
+  padding: 5px 1px 1px;
+  color: var(--dash-muted);
+  font-size: 12px;
+}
+body.room-active #catalogSearchForm .room-search-options summary {
+  width: fit-content;
+  min-height: 33px;
+  padding: 7px 3px;
+  color: var(--dash-violet);
+  font-weight: 600;
+  cursor: pointer;
+}
+body.room-active #catalogSearchForm .room-search-options label { display: block; margin: 10px 0 5px; font-size: 12px; }
+body.room-active #catalogSearchForm .room-search-options select {
+  width: 100%; min-height: 42px; padding: 8px 10px;
+  color: var(--dash-ink); background: #fff;
+  border: 1px solid var(--dash-line); border-radius: 10px;
+  font-size: 13px;
+}
+body.room-active #catalogSearchForm :is(.catalog-provider,.catalog-hint) {
+  margin: 8px 0; color: var(--dash-muted);
+  font-size: 11px; line-height: 1.5;
+}
+body.room-active #catalogSearchForm .catalog-provider a { color: var(--dash-violet); }
+body.room-active #addPanel .catalog-sort-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin: 10px 0 6px; padding: 0;
+  color: var(--dash-muted); font-size: 11px;
+}
+body.room-active #addPanel .catalog-sort-row.hidden { display: none; }
+body.room-active #addPanel .catalog-sort-row select {
+  width: auto; max-width: 67%; min-height: 36px;
+  padding: 5px 8px; border-radius: 9px;
+  border: 1px solid var(--dash-line); background: #fff;
+  color: var(--dash-ink); font: 500 11px var(--dash-sans,system-ui);
+}
+body.room-active #addPanel .search-status {
+  margin: 9px 0 10px; color: var(--dash-muted);
+  font: 400 12px/1.5 var(--dash-sans, system-ui);
+}
+body.room-active #addPanel .catalog-results {
+  display: flex; flex-direction: column; gap: 0;
+  max-height: min(49dvh, 460px);
+  padding-right: 0; overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.room-active #addPanel .catalog-result.dash-row {
+  width: 100%; min-width: 0;
+  display: flex; align-items: center; gap: 0;
+  margin-bottom: 7px; padding: 0;
+  border: 1px solid var(--dash-line);
+  border-radius: 12px; color: var(--dash-ink);
+  background: #fff9;
+}
+body.room-active #addPanel .catalog-result.dash-row:is(:hover,:focus-within) { border-color: #bdace0; }
+body.room-active #addPanel .catalog-result.dash-row.is-selected { border-color: var(--dash-violet); background: #f5eefb; }
+body.room-active #addPanel .catalog-result .dash-row-open {
+  flex: 1; min-width: 0; min-height: 56px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 7px 10px; margin: 0;
+  text-align: left; color: var(--dash-ink);
+  background: transparent; border: 0; border-radius: 12px;
+}
+body.room-active #addPanel .catalog-result .dash-row-open:hover { background: #f5eefb; }
+body.room-active #addPanel .catalog-result .dash-row-text { min-width: 0; flex: 1; display: block; }
+body.room-active #addPanel .catalog-result .dash-row-text strong,
+body.room-active #addPanel .catalog-result .dash-row-text small {
+  display: block; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+body.room-active #addPanel .catalog-result .dash-row-text strong { color: var(--dash-ink); font-size: 15px; font-weight: 700; }
+body.room-active #addPanel .catalog-result .dash-row-text small { color: var(--dash-muted); font-size: 12px; margin-top: 2px; }
+body.room-active #addPanel .catalog-result .catalog-art.dash-row-art {
+  position: relative; flex: 0 0 49px;
+  display: grid; place-items: center;
+  width: 49px; height: 43px; min-width: 49px;
+  margin-left: 10px; padding: 0;
+  border: 0; border-radius: 7px;
+  overflow: hidden; color: #61417f;
+  background: #e3d6f2;
+}
+body.room-active #addPanel .catalog-result .catalog-art.dash-row-art img,
+body.room-active #addPanel .catalog-result .dash-row-art img { width: 100%; height: 100%; object-fit: cover; }
+body.room-active #addPanel .catalog-result .catalog-art-button:hover { outline: 2px solid var(--dash-violet); outline-offset: 1px; }
+body.room-active #addPanel .catalog-result .album-art-hint { position: absolute; right: 2px; bottom: 1px; font-size: 10px; color: #fff; background: #2e153994; border-radius: 3px; }
+body.room-active #addPanel .catalog-result .dash-row-chevron {
+  flex: none; margin: 0; padding: 0;
+  color: #6b6077; font: 400 23px/1 var(--dash-sans,system-ui);
+}
+body.room-active #addPanel .catalog-artist-result .dash-row-art.is-artist {
+  position: relative; flex: 0 0 43px;
+  width: 43px; height: 43px; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+  background: #e3d6f2;
+}
+body.room-active #addPanel .catalog-artist-result .dash-row-art .catalog-artist-avatar {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: grid; place-items: center; overflow: hidden;
+  border: 0; border-radius: 50%; background: #e3d6f2;
+}
+body.room-active #addPanel .catalog-artist-result .dash-row-art img { position: absolute; inset: 0; }
+body.room-active #addPanel .catalog-artist-result .dash-row-art .catalog-artist-initials { color: #61417f; }
+body.room-active #addPanel :is(#albumBack,.chosen-clear) { color: var(--dash-violet); background: #f4edfb; border-color: var(--dash-line); }
+body.room-active #addPanel .catalog-album-header,
+body.room-active #addPanel .catalog-artist-albums,
+body.room-active #addPanel .selected-track {
+  color: var(--dash-ink); border-color: var(--dash-line); background: #f7f2fc;
+}
+body.room-active #addPanel .catalog-album-header :is(strong,span,small),
+body.room-active #addPanel .catalog-artist-albums :is(strong,span,small),
+body.room-active #addPanel .selected-track :is(strong,span,small) { color: inherit; }
+body.room-active #addPanel :is(.catalog-discography-card,.catalog-discography-art,.chosen-cover) {
+  border-color: var(--dash-line); background: #fff;
+}
+body.room-active #addPanel .field-label, body.room-active #addPanel .favorite-title { color: var(--dash-ink); }
+body.room-active #addPanel #addSongForm :is(input,textarea) {
+  color: var(--dash-ink); background: #fff; border: 1px solid var(--dash-line);
+}
+body.room-active #addPanel #submitSong { color: white; background: var(--dash-violet); }
+body.room-active #addPanel .panel-foot { color: var(--dash-muted); }
+body.room-active #addPanel :is(button, input, select, summary, textarea):focus-visible {
+  outline: 2px solid var(--dash-violet); outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  body.room-active #addPanel .catalog-result .dash-row-open { gap: 8px; padding: 6px 8px; }
+  body.room-active #addPanel .catalog-result .dash-row-text strong { font-size: 14px; }
+  body.room-active #addPanel .catalog-result .dash-row-text small { font-size: 11px; }
+  body.room-active #addPanel .catalog-results { max-height: min(40dvh, 340px); }
+}

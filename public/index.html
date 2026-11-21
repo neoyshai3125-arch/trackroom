@@ -11,10 +11,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.9.5" />
-  <link rel="stylesheet" href="/home.css?v=6.9.5" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.5" />
-  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.5" />
+  <link rel="stylesheet" href="/style.css?v=6.9.6" />
+  <link rel="stylesheet" href="/home.css?v=6.9.6" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.6" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.6" />
+  <link rel="stylesheet" href="/room-search-home.css?v=6.9.6" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
 </head>
 <body>
@@ -171,7 +172,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.5</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.6</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -196,23 +197,24 @@
         <button id="addPanelBackdrop" class="add-panel-backdrop hidden" type="button" aria-label="음악 등록 창 닫기"></button>
         <aside class="add-panel" id="addPanel" aria-label="음악 등록">
           <button id="closeAddPanel" class="add-panel-close" type="button" aria-label="음악 등록 창 닫기">✕</button>
-          <div class="panel-decor" aria-hidden="true">✳</div>
-          <div class="mini-heading">DROP A TRACK</div>
-          <h2>이 노래,<br/>너도 들어봐.</h2>
-          <p class="panel-intro">Apple/iTunes 또는 Last.fm에서 검색된 음악만 등록할 수 있어. 곡 정보에 저장된 앨범 커버를 버블에 표시해.</p>
-          <form id="catalogSearchForm" class="catalog-search-form" role="search">
-            <div class="catalog-provider"><span class="catalog-provider-name">✳ 음악 검색 · 기본 Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
-            <label class="field-label" for="catalogPlatform">검색 데이터베이스</label>
-            <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
-            <div id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</div>
-            <label class="field-label" for="catalogSearchMode">검색 기준</label>
-            <select id="catalogSearchMode" class="platform-select"><option value="track">곡 제목으로 검색</option><option value="artist">아티스트 검색 → 프로필 → 앨범·곡 선택</option><option value="album">앨범명으로 검색 → 수록곡 선택</option></select>
+          <div class="room-home-search-heading">
+            <h2>음악 탐색</h2>
+            <p>곡을 찾아 선택하면 이 방에 추천할 수 있어.</p>
+          </div>
+          <form id="catalogSearchForm" class="catalog-search-form room-home-search" role="search">
+            <label class="dash-sr" for="songQuery">검색어</label>
+            <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목, 아티스트, 앨범" autocomplete="off" required />
+            <label class="dash-sr" for="catalogSearchMode">검색 기준</label>
+            <select id="catalogSearchMode" aria-label="검색 기준"><option value="track">곡</option><option value="artist">아티스트</option><option value="album">앨범</option></select>
+            <button class="room-home-search-button" type="submit">검색</button>
             <div id="roomCatalogFilters" class="catalog-filter-region"></div>
-            <label class="field-label" for="songQuery">음악 검색 <span class="required">*</span></label>
-            <div class="catalog-search-row">
-              <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목 또는 아티스트" autocomplete="off" required />
-              <button class="btn btn-outline catalog-search-button" type="submit">검색</button>
-            </div>
+            <details class="room-search-options">
+              <summary>검색 서비스 설정</summary>
+              <label for="catalogPlatform">검색 데이터베이스</label>
+              <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
+              <p id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</p>
+              <div class="catalog-provider"><span class="catalog-provider-name">음악 검색 · Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
+            </details>
           </form>
           <div class="catalog-sort-row" id="catalogSortRow">
             <label for="catalogResultSort">검색 결과 정렬</label>
@@ -337,9 +339,9 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/catalog-filters.js?v=6.9.5" defer></script>
-  <script src="/home.js?v=6.9.5" defer></script>
-  <script src="/room-bubbles.js?v=6.9.5" defer></script>
-  <script src="/app.js?v=6.9.5" defer></script>
+  <script src="/catalog-filters.js?v=6.9.6" defer></script>
+  <script src="/home.js?v=6.9.6" defer></script>
+  <script src="/room-bubbles.js?v=6.9.6" defer></script>
+  <script src="/app.js?v=6.9.6" defer></script>
 </body>
 </html>
