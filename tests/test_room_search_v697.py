@@ -23,7 +23,7 @@ class TestRoomSearchMatchesHome(TestCase):
         self.assertIn('<option value="track">곡</option>',html)
         self.assertIn('<option value="artist">아티스트</option>',html)
         self.assertIn('<option value="album">앨범</option>',html)
-        self.assertIn('/room-search-home.css?v=6.9.7',html)
+        self.assertIn('<style id="room-search-v698-critical">',html)
     def test_results_use_home_row_structure_and_keep_room_actions(self):
         js=(ROOT/'public/app.js').read_text()
         for expected in ('catalog-result dash-row','catalog-artist-result dash-row',
@@ -34,9 +34,9 @@ class TestRoomSearchMatchesHome(TestCase):
         self.assertIn('current.position + change / (2 * Math.PI) * duration',js)
     def test_home_style_reuse_is_room_scoped_and_caches_bust(self):
         css=(ROOT/'public/room-search-home.css').read_text()
-        self.assertIn('body.room-active #catalogSearchForm',css)
-        self.assertIn('body.room-active #addPanel .catalog-result.dash-row',css)
+        self.assertIn('#addPanel #catalogSearchForm',css)
+        self.assertIn('#addPanel .catalog-result.dash-row',css)
         self.assertIn('background:var(--room-panel-purple)',css)
         sw=(ROOT/'public/sw.js').read_text()
-        self.assertIn("trackroom-shell-v6.9.7",sw)
-        self.assertIn('/room-search-home.css?v=6.9.7',sw)
+        self.assertIn("trackroom-shell-v6.9.8",sw)
+        self.assertNotIn('/room-search-home.css?v=',sw)

@@ -1,4 +1,4 @@
-"""Regression checks for v6.9.7 design and existing song-add behavior."""
+"""Regression checks for v6.9.8 design and existing song-add behavior."""
 from pathlib import Path
 from html.parser import HTMLParser
 import unittest
@@ -37,9 +37,9 @@ class TestAddMusicDrawerDesign(unittest.TestCase):
                          'data-catalog-mode="album"','room-result-topline','room-add-footer',
                          'room-song-extras','선택한 곡 추가하기'):
             self.assertIn(fragment,self.html)
-        for fragment in ('body.room-active #addPanel','background:var(--room-panel-purple)',
+        for fragment in ('#addPanel','background:var(--room-panel-purple)',
                          '.catalog-result.dash-row.is-selected','.catalog-result.is-selected .catalog-choose.room-result-pick',
-                         'body.room-active #addPanel #addSongForm.room-add-footer', '@media(max-width:640px)'):
+                         '#addPanel #addSongForm.room-add-footer', '@media(max-width:640px)'):
             self.assertIn(fragment,self.css)
     def test_workflow_preserved(self):
         for fragment in ('/api/catalog/search?', '/api/catalog/album-tracks',
@@ -54,6 +54,6 @@ class TestAddMusicDrawerDesign(unittest.TestCase):
         self.assertIn('const endSeconds = parseTime',self.js)
     def test_cache_version(self):
         sw=(ROOT/'public/sw.js').read_text()
-        self.assertIn('trackroom-shell-v6.9.7',sw)
-        self.assertIn('/room-search-home.css?v=6.9.7',sw)
-        self.assertIn('v6.9.7</span>',self.html)
+        self.assertIn('trackroom-shell-v6.9.8',sw)
+        self.assertIn('<style id="room-search-v698-critical">',self.html)
+        self.assertIn('v6.9.8</span>',self.html)

@@ -11,12 +11,576 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.9.7" />
-  <link rel="stylesheet" href="/home.css?v=6.9.7" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.7" />
-  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.7" />
-  <link rel="stylesheet" href="/room-search-home.css?v=6.9.7" />
+  <link rel="stylesheet" href="/style.css?v=6.9.8" />
+  <link rel="stylesheet" href="/home.css?v=6.9.8" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.8" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.8" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
+  <!-- v6.9.8: Embedded drawer CSS prevents missing-file/cache mismatches on mobile/PWA. -->
+  <style id="room-search-v698-critical">
+/* TRACKROOM v6.9.8 — resilient lavender drawer styles (embedded in HTML too). */
+#addPanel {
+  --room-panel-ink: #231334;
+  --room-panel-muted: #62536e;
+  --room-panel-purple: #722d9d;
+  --room-panel-purple-deep: #66258f;
+  --room-panel-border: #e4daec;
+  --room-panel-lilac: #f5edf9;
+  position: fixed;
+  z-index: 301;
+  inset: 0 0 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(608px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  padding: 30px 30px 25px;
+  border: 0;
+  border-radius: 23px 0 0 23px;
+  background: linear-gradient(160deg, #fffcff 0%, #fbf7fe 58%, #fcf8ff 100%);
+  color: var(--room-panel-ink);
+  font-family: var(--dash-sans, system-ui, sans-serif);
+  box-shadow: -19px 0 66px #26133338;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#addPanelBackdrop {
+  background: rgba(47, 30, 65, .36);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#addPanel .add-panel-close {
+  position: absolute;
+  z-index: 9;
+  top: 18px;
+  right: 18px;
+  float: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #ded3e9;
+  border-radius: 50%;
+  color: #392344;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+}
+#addPanel .add-panel-close:hover { background: var(--room-panel-lilac); }
+#addPanel .room-home-search-heading {
+  flex: none;
+  padding: 0 52px 0 8px;
+  margin: 0 0 25px;
+}
+#addPanel .room-home-search-heading h2 {
+  margin: 0 0 7px;
+  color: #241230;
+  font-size: clamp(25px, 2.5vw, 34px);
+  line-height: 1.17;
+  font-weight: 800;
+  letter-spacing: -.055em;
+}
+#addPanel .room-home-search-heading p {
+  margin: 0;
+  color: #453450;
+  font-size: 15px;
+  line-height: 1.55;
+}
+#addPanel #catalogSearchForm {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 20px;
+  margin: 0 0 20px;
+}
+#addPanel #catalogSearchForm .room-search-querybar {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+#addPanel #catalogSearchForm .room-search-field {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+#addPanel #catalogSearchForm .room-search-field svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%; left: 18px;
+  transform: translateY(-50%);
+  width: 22px; height: 22px;
+  color: #362344;
+  pointer-events: none;
+}
+#addPanel #catalogSearchForm #songQuery {
+  box-sizing: border-box;
+  display: block;
+  width: 100%; height: 53px;
+  margin: 0;
+  padding: 0 15px 0 53px;
+  border: 1.5px solid #aa9cb6;
+  border-radius: 28px;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--room-panel-ink);
+  font: 500 14px var(--dash-sans, system-ui, sans-serif);
+}
+#addPanel #catalogSearchForm #songQuery::placeholder { color: #62536f; opacity: 1; }
+#addPanel #catalogSearchForm #songQuery:focus {
+  border-color: var(--room-panel-purple);
+  box-shadow: 0 0 0 3px #b98bd833;
+}
+#addPanel #catalogSearchForm .room-home-search-button {
+  flex: none;
+  min-width: 80px;
+  height: 53px;
+  margin: 0;
+  padding: 0 21px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--room-panel-purple);
+  color: #fff;
+  font: 800 16px var(--dash-sans, system-ui, sans-serif);
+  box-shadow: none;
+}
+#addPanel #catalogSearchForm .room-home-search-button:not(:disabled):hover,
+#addPanel #submitSong:not(:disabled):hover { background: var(--room-panel-purple-deep); }
+#addPanel #catalogSearchForm .room-home-search-button:disabled { opacity: .55; cursor: progress; }
+#addPanel #catalogSearchForm > .room-search-native-mode { display: none; }
+#addPanel #catalogSearchForm .room-search-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  width: 100%;
+  min-height: 56px;
+  padding: 0;
+  border-radius: 15px;
+  background: #f1eaf6;
+}
+#addPanel #catalogSearchForm .room-search-tab {
+  position: relative;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #35213f;
+  font: 700 16px var(--dash-sans, system-ui, sans-serif);
+}
+#addPanel #catalogSearchForm .room-search-tab + .room-search-tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 28%; bottom: 28%;
+  width: 1px;
+  background: #d5cbdc;
+}
+#addPanel #catalogSearchForm .room-search-tab.is-active {
+  background: linear-gradient(110deg, #ead5f9, #f2e9ff);
+  color: #441367;
+  box-shadow: inset 0 -3px 0 #822fba;
+}
+#addPanel #catalogSearchForm .room-search-tab.is-active::before,
+#addPanel #catalogSearchForm .room-search-tab.is-active + .room-search-tab::before { display: none; }
+#addPanel .room-result-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  min-height: 33px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--room-panel-border);
+  padding: 0 2px 10px;
+}
+#addPanel .search-status {
+  min-width: 0;
+  margin: 0;
+  color: #35223f;
+  font: 600 13px/1.5 var(--dash-sans, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+}
+#addPanel .catalog-sort-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+}
+#addPanel .catalog-sort-row.hidden { display: none; }
+#addPanel #catalogResultSort {
+  width: auto;
+  max-width: 92px;
+  min-height: 33px;
+  margin: 0;
+  padding: 4px 24px 4px 10px;
+  border: 0;
+  border-radius: 9px;
+  background-color: transparent;
+  color: #2b193d;
+  font: 600 13px var(--dash-sans, system-ui, sans-serif);
+  cursor: pointer;
+}
+#addPanel .catalog-results {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 0;
+  min-height: 105px;
+  max-height: none;
+  margin: 0;
+  padding: 0 0 8px;
+  overflow-y: auto;
+  scrollbar-color: #d7c7e3 transparent;
+  overscroll-behavior: contain;
+}
+#addPanel .catalog-result.dash-row {
+  display: flex;
+  align-items: center;
+  flex: none;
+  width: 100%; min-width: 0;
+  min-height: 84px;
+  margin: 0;
+  padding: 5px 8px;
+  border: 1.5px solid transparent;
+  border-bottom-color: var(--room-panel-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--room-panel-ink);
+  box-shadow: none;
+}
+#addPanel .catalog-result.dash-row:hover,
+#addPanel .catalog-result.dash-row:focus-within {
+  background: #f8f1fc;
+  border-radius: 11px;
+  border-color: #ded2e9;
+}
+#addPanel .catalog-result.dash-row.is-selected {
+  background: #f5eafb;
+  border: 1.5px solid #8a38b8;
+  border-radius: 13px;
+}
+#addPanel .catalog-result .dash-row-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 66px;
+  margin: 0;
+  padding: 4px 9px 4px 13px;
+  background: transparent;
+  color: var(--room-panel-ink);
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+}
+#addPanel .catalog-result .dash-row-open:hover { background: transparent; }
+#addPanel .catalog-result .dash-row-text { flex: 1; min-width: 0; }
+#addPanel .catalog-result .dash-row-text strong,
+#addPanel .catalog-result .dash-row-text small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#addPanel .catalog-result .dash-row-text strong {
+  color: #1f1528;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+#addPanel .catalog-result .dash-row-text small {
+  margin-top: 1px;
+  color: #5b4c69;
+  font-size: 13px;
+  line-height: 1.5;
+}
+#addPanel .catalog-result .catalog-art.dash-row-art,
+#addPanel .catalog-artist-result .dash-row-art.is-artist {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 66px;
+  width: 66px;
+  height: 66px;
+  min-width: 66px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 11px;
+  background: #ded1ea;
+  color: #685179;
+}
+#addPanel .catalog-artist-result .dash-row-art.is-artist,
+#addPanel .catalog-artist-result .catalog-artist-avatar { border-radius: 50%; }
+#addPanel .catalog-artist-result .catalog-artist-avatar {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  overflow: hidden; width: 100%; height: 100%;
+  background: #e5d5ed;
+}
+#addPanel .catalog-result .catalog-art.dash-row-art img,
+#addPanel .catalog-result .dash-row-art img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+#addPanel .catalog-result .album-art-hint {
+  position: absolute;
+  bottom: 2px; right: 3px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: #321c438c;
+  color: white; font-size: 9px;
+}
+#addPanel .catalog-result .catalog-choose.room-result-pick {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px; height: 36px;
+  padding: 0;
+  border: 1.5px solid #b1a4bc;
+  border-radius: 50%;
+  color: #4e365e;
+  font: 500 26px/1 system-ui,sans-serif;
+}
+#addPanel .catalog-result.is-selected .catalog-choose.room-result-pick {
+  background: var(--room-panel-purple);
+  border-color: var(--room-panel-purple);
+  color: transparent;
+  font-size: 0;
+}
+#addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after {
+  content: '✓';
+  color: #fff;
+  font: 800 20px/1 system-ui,sans-serif;
+}
+#addPanel .catalog-result .dash-row-chevron {
+  flex: 0 0 28px; display: grid; place-items: center;
+  margin: 0; color: #634c70;
+  font: 300 28px/1 system-ui,sans-serif;
+}
+#addPanel :is(#albumBack,.chosen-clear) {
+  border: 0; background: transparent;
+  color: var(--room-panel-purple);
+}
+#addPanel #albumBack { align-self:flex-start; margin-bottom:8px; padding:6px 0; }
+#addPanel :is(.catalog-album-header,.catalog-artist-albums) {
+  flex: none;
+  background: #f6effa;
+  border: 1px solid var(--room-panel-border);
+  border-radius: 13px;
+  color: var(--room-panel-ink);
+}
+#addPanel :is(.catalog-album-header,.catalog-artist-albums) :is(strong,span,small) { color: inherit; }
+#addPanel :is(.catalog-discography-card,.catalog-discography-art) {
+  border-color: var(--room-panel-border); background: white;
+}
+#addPanel .room-search-options {
+  flex: none;
+  margin: 1px 0 12px;
+  padding: 0;
+  border: 0;
+  color: var(--room-panel-ink);
+}
+#addPanel .room-search-options > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 51px;
+  padding: 9px 4px;
+  color: #3c294a;
+  font-size: 14px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  border-top: 1px solid var(--room-panel-border);
+}
+#addPanel .room-search-options > summary::-webkit-details-marker,
+#addPanel .room-song-extras > summary::-webkit-details-marker { display: none; }
+#addPanel .room-settings-gear { font-size: 24px; line-height: 1; }
+#addPanel .room-setting-chevron { margin-left:auto; font-size:26px; transform: rotate(0deg); transition: transform .15s; }
+#addPanel .room-search-options[open] .room-setting-chevron { transform: rotate(90deg); }
+#addPanel .room-search-options-body {
+  padding: 8px 12px 15px;
+  border: 1px solid var(--room-panel-border);
+  border-radius: 13px;
+  background: #faf6fd;
+}
+#addPanel .room-search-options-body label {
+  display:block; margin: 5px 0 7px;
+  color: var(--room-panel-muted); font-weight: 700; font-size: 12px;
+}
+#addPanel .room-search-options-body select,
+#addPanel .catalog-filter-fields select {
+  max-width: 100%; width: 100%; min-height: 41px;
+  padding: 6px 9px;
+  border: 1px solid #d7c8e4; border-radius: 10px;
+  background: #fff; color: var(--room-panel-ink);
+}
+#addPanel .room-search-options-body .catalog-filter-region { padding: 8px 0; }
+#addPanel .room-search-options-body :is(.catalog-hint,.catalog-provider,.catalog-filter-description) {
+  color: var(--room-panel-muted); font-size: 11px; line-height: 1.6;
+}
+#addPanel .room-search-options-body .catalog-provider a { color: var(--room-panel-purple); }
+#addPanel #addSongForm.room-add-footer {
+  position: sticky;
+  z-index: 3;
+  flex: none;
+  bottom: -25px;
+  margin: auto -30px -25px;
+  padding: 12px 30px calc(24px + env(safe-area-inset-bottom,0px));
+  border-top: 1px solid #eee5f3;
+  background: linear-gradient(180deg,#fcf9ff 0%,#fffaff 100%);
+  box-shadow: 0 -10px 20px #fdf8ffab;
+}
+#addPanel #addSongForm:has(> #selectedTrack.hidden) { display: none; }
+#addPanel .selected-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 54px;
+  margin: 0 0 11px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 13px;
+  background: #f1eaf7;
+  color: #34203f;
+}
+#addPanel .chosen-count { flex: none; color: #2d183a; font-weight: 800; font-size: 13px; }
+#addPanel .chosen-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex: 1; min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  color: #3d2a4d;
+  font-size: 13px;
+}
+#addPanel .chosen-summary strong,
+#addPanel .chosen-summary > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#addPanel .chosen-summary strong { font-weight: 600; }
+#addPanel .chosen-dot { flex:none; }
+#addPanel .chosen-clear {
+  flex: none; width:26px; height:26px; margin:0; padding:0;
+  color: #51345c; font-size: 19px;
+  border: 0; border-radius: 50%; background: transparent;
+}
+#addPanel .chosen-clear:hover { background: #e6d9ec; }
+#addPanel .room-song-extras { margin: 0 0 10px; }
+#addPanel .room-song-extras > summary {
+  display: flex; align-items:center; justify-content: space-between;
+  padding: 3px 3px 8px;
+  color: #684479; font-weight: 700; font-size: 12px;
+  cursor: pointer; list-style:none;
+}
+#addPanel .room-song-extras > summary::before { content: '⌄'; margin-right:7px; }
+#addPanel .room-song-extras > summary span { margin-left:auto; color: #87758e; font-weight: 500; }
+#addPanel .room-song-extras[open] > summary::before { transform:rotate(180deg); }
+#addPanel .room-song-extras-body {
+  max-height: min(32dvh,290px);
+  overflow-y:auto;
+  margin: 0 0 10px;
+  padding: 6px 13px 12px;
+  border: 1px solid #e5d9ed; border-radius: 12px;
+  background:#f8f1fb;
+}
+#addPanel .field-label,
+#addPanel .favorite-title { display:block; color: #392748; font-size: 12px; }
+#addPanel .optional { color:#83708b; }
+#addPanel #addSongForm :is(input,textarea) {
+  width:100%; border:1px solid #dbcee7; border-radius:9px;
+  background:#fff; color:#281837;
+  font-size:13px;
+}
+#addPanel .room-selected-links { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+#addPanel .room-selected-links a { color:var(--room-panel-purple); font-size:12px; text-decoration:underline; }
+#addPanel #submitSong {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  width:100%; min-height:60px;
+  margin:0; padding:12px 16px;
+  background:var(--room-panel-purple);
+  color:white;
+  border:0; border-radius:15px;
+  box-shadow: none;
+  font: 800 17px var(--dash-sans,system-ui,sans-serif);
+}
+#addPanel #submitSong span { font-size: 24px; font-weight:400; }
+#addPanel #submitSong:disabled { opacity:.5; cursor: not-allowed; }
+#addPanel :is(button,input,select,summary,textarea):focus-visible {
+  outline: 2px solid var(--room-panel-purple); outline-offset: 3px;
+}
+@media(max-width:640px) {
+  #addPanel {
+    inset: auto 0 0;
+    width:100%; max-height:96dvh; height:96dvh;
+    padding:24px 18px 15px;
+    border-radius:22px 22px 0 0;
+    transform: translateY(110%);
+  }
+  #addPanel.panel-open { transform:translateY(0); }
+  #addPanel .add-panel-close { top:13px;right:13px;width:40px;height:40px; }
+  #addPanel .room-home-search-heading { padding:0 44px 0 4px; margin:0 0 18px; }
+  #addPanel .room-home-search-heading h2 { font-size:27px; }
+  #addPanel .room-home-search-heading p { font-size:13px; }
+  #addPanel #catalogSearchForm { gap:14px; margin-bottom:14px; }
+  #addPanel #catalogSearchForm .room-search-querybar { gap:7px; }
+  #addPanel #catalogSearchForm .room-search-field svg { left:12px;width:18px;height:18px; }
+  #addPanel #catalogSearchForm #songQuery { height:48px;padding-left:39px;font-size:12px; }
+  #addPanel #catalogSearchForm .room-home-search-button { height:48px; min-width:65px;padding:0 12px; font-size:14px; }
+  #addPanel #catalogSearchForm .room-search-tabs { min-height:48px; }
+  #addPanel #catalogSearchForm .room-search-tab { font-size:14px; }
+  #addPanel .catalog-result.dash-row { min-height:67px; padding:3px 2px; }
+  #addPanel .catalog-result .dash-row-open { min-height:53px;padding:3px 7px;gap:9px; }
+  #addPanel .catalog-result .catalog-art.dash-row-art,
+  #addPanel .catalog-artist-result .dash-row-art.is-artist { flex-basis:50px;width:50px;height:50px;min-width:50px;margin-left:2px; }
+  #addPanel .catalog-result .dash-row-text strong { font-size:14px; }
+  #addPanel .catalog-result .dash-row-text small { font-size:11px; }
+  #addPanel .catalog-result .catalog-choose.room-result-pick { flex-basis:30px;width:30px;height:30px;font-size:23px; }
+  #addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after { font-size:17px; }
+  #addPanel #addSongForm.room-add-footer { bottom:-15px; margin:auto -18px -15px; padding:9px 18px calc(14px + env(safe-area-inset-bottom,0px)); }
+  #addPanel .selected-track { padding:8px;gap:5px; }
+  #addPanel .chosen-count { font-size:11px; }
+  #addPanel .chosen-summary { font-size:11px;gap:4px; }
+  #addPanel #submitSong { min-height:52px;font-size:15px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  #addPanel .room-setting-chevron { transition:none; }
+}
+
+/* Hardening: styles and control icons must not inherit legacy dark-theme dimensions. */
+#addPanel, #addPanel *, #addPanel *::before, #addPanel *::after { box-sizing: border-box; }
+#addPanel { isolation: isolate; }
+#addPanel .room-search-field > svg { display: block; max-width: 22px; max-height: 22px; }
+#addPanel .room-home-search-heading h2,
+#addPanel .room-home-search-heading p { text-shadow: none; }
+#addPanel .room-search-native-mode { display: none !important; }
+#addPanel .room-search-querybar { flex-wrap: nowrap; }
+#addPanel #catalogSearchForm .room-search-field { width: auto; }
+#addPanel .catalog-results .catalog-result { max-width:100%; }
+#addPanel:where(:not(.panel-open)) { pointer-events: none; }
+@media (max-width:640px) {
+  #addPanel .room-search-field > svg { max-width:18px;max-height:18px; }
+  #addPanel #catalogSearchForm #songQuery { min-width: 0; }
+  #addPanel .room-home-search-heading { padding-right: 48px; }
+}
+
+  </style>
 </head>
 <body>
   <div class="shell">
@@ -172,7 +736,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.7</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.8</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -205,7 +769,7 @@
             <div class="room-search-querybar">
               <label class="dash-sr" for="songQuery">검색어</label>
               <div class="room-search-field">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
                 <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목, 아티스트, 앨범 검색" autocomplete="off" required />
               </div>
               <button class="room-home-search-button" type="submit">검색</button>
@@ -220,7 +784,7 @@
           </form>
           <div class="room-result-topline">
             <div id="searchStatus" class="search-status" aria-live="polite">곡을 검색해 방에 추가해 보세요.</div>
-            <div class="catalog-sort-row" id="catalogSortRow">
+            <div class="catalog-sort-row hidden" id="catalogSortRow">
               <label class="dash-sr" for="catalogResultSort">검색 결과 정렬</label>
               <select id="catalogResultSort" aria-label="검색 결과 정렬"><option value="popular">인기순</option><option value="recent">최신순</option></select>
             </div>
@@ -355,9 +919,9 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/catalog-filters.js?v=6.9.7" defer></script>
-  <script src="/home.js?v=6.9.7" defer></script>
-  <script src="/room-bubbles.js?v=6.9.7" defer></script>
-  <script src="/app.js?v=6.9.7" defer></script>
+  <script src="/catalog-filters.js?v=6.9.8" defer></script>
+  <script src="/home.js?v=6.9.8" defer></script>
+  <script src="/room-bubbles.js?v=6.9.8" defer></script>
+  <script src="/app.js?v=6.9.8" defer></script>
 </body>
 </html>

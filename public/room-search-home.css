@@ -1,5 +1,5 @@
-/* TRACKROOM v6.9.7 — screenshot-matched lavender "Add music" drawer. */
-body.room-active #addPanel {
+/* TRACKROOM v6.9.8 — resilient lavender drawer styles (embedded in HTML too). */
+#addPanel {
   --room-panel-ink: #231334;
   --room-panel-muted: #62536e;
   --room-panel-purple: #722d9d;
@@ -26,12 +26,12 @@ body.room-active #addPanel {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-body.room-active .add-panel-backdrop {
+#addPanelBackdrop {
   background: rgba(47, 30, 65, .36);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-body.room-active #addPanel .add-panel-close {
+#addPanel .add-panel-close {
   position: absolute;
   z-index: 9;
   top: 18px;
@@ -51,13 +51,13 @@ body.room-active #addPanel .add-panel-close {
   font-weight: 300;
   line-height: 1;
 }
-body.room-active #addPanel .add-panel-close:hover { background: var(--room-panel-lilac); }
-body.room-active #addPanel .room-home-search-heading {
+#addPanel .add-panel-close:hover { background: var(--room-panel-lilac); }
+#addPanel .room-home-search-heading {
   flex: none;
   padding: 0 52px 0 8px;
   margin: 0 0 25px;
 }
-body.room-active #addPanel .room-home-search-heading h2 {
+#addPanel .room-home-search-heading h2 {
   margin: 0 0 7px;
   color: #241230;
   font-size: clamp(25px, 2.5vw, 34px);
@@ -65,31 +65,31 @@ body.room-active #addPanel .room-home-search-heading h2 {
   font-weight: 800;
   letter-spacing: -.055em;
 }
-body.room-active #addPanel .room-home-search-heading p {
+#addPanel .room-home-search-heading p {
   margin: 0;
   color: #453450;
   font-size: 15px;
   line-height: 1.55;
 }
-body.room-active #catalogSearchForm {
+#addPanel #catalogSearchForm {
   display: flex;
   flex-direction: column;
   flex: none;
   gap: 20px;
   margin: 0 0 20px;
 }
-body.room-active #catalogSearchForm .room-search-querybar {
+#addPanel #catalogSearchForm .room-search-querybar {
   display: flex;
   align-items: stretch;
   gap: 10px;
   width: 100%;
 }
-body.room-active #catalogSearchForm .room-search-field {
+#addPanel #catalogSearchForm .room-search-field {
   position: relative;
   min-width: 0;
   flex: 1;
 }
-body.room-active #catalogSearchForm .room-search-field svg {
+#addPanel #catalogSearchForm .room-search-field svg {
   position: absolute;
   z-index: 1;
   top: 50%; left: 18px;
@@ -98,7 +98,7 @@ body.room-active #catalogSearchForm .room-search-field svg {
   color: #362344;
   pointer-events: none;
 }
-body.room-active #catalogSearchForm #songQuery {
+#addPanel #catalogSearchForm #songQuery {
   box-sizing: border-box;
   display: block;
   width: 100%; height: 53px;
@@ -112,12 +112,12 @@ body.room-active #catalogSearchForm #songQuery {
   color: var(--room-panel-ink);
   font: 500 14px var(--dash-sans, system-ui, sans-serif);
 }
-body.room-active #catalogSearchForm #songQuery::placeholder { color: #62536f; opacity: 1; }
-body.room-active #catalogSearchForm #songQuery:focus {
+#addPanel #catalogSearchForm #songQuery::placeholder { color: #62536f; opacity: 1; }
+#addPanel #catalogSearchForm #songQuery:focus {
   border-color: var(--room-panel-purple);
   box-shadow: 0 0 0 3px #b98bd833;
 }
-body.room-active #catalogSearchForm .room-home-search-button {
+#addPanel #catalogSearchForm .room-home-search-button {
   flex: none;
   min-width: 80px;
   height: 53px;
@@ -130,11 +130,11 @@ body.room-active #catalogSearchForm .room-home-search-button {
   font: 800 16px var(--dash-sans, system-ui, sans-serif);
   box-shadow: none;
 }
-body.room-active #catalogSearchForm .room-home-search-button:not(:disabled):hover,
-body.room-active #addPanel #submitSong:not(:disabled):hover { background: var(--room-panel-purple-deep); }
-body.room-active #catalogSearchForm .room-home-search-button:disabled { opacity: .55; cursor: progress; }
-body.room-active #catalogSearchForm > .room-search-native-mode { display: none; }
-body.room-active #catalogSearchForm .room-search-tabs {
+#addPanel #catalogSearchForm .room-home-search-button:not(:disabled):hover,
+#addPanel #submitSong:not(:disabled):hover { background: var(--room-panel-purple-deep); }
+#addPanel #catalogSearchForm .room-home-search-button:disabled { opacity: .55; cursor: progress; }
+#addPanel #catalogSearchForm > .room-search-native-mode { display: none; }
+#addPanel #catalogSearchForm .room-search-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
@@ -144,7 +144,7 @@ body.room-active #catalogSearchForm .room-search-tabs {
   border-radius: 15px;
   background: #f1eaf6;
 }
-body.room-active #catalogSearchForm .room-search-tab {
+#addPanel #catalogSearchForm .room-search-tab {
   position: relative;
   padding: 10px 8px;
   border: 0;
@@ -153,7 +153,7 @@ body.room-active #catalogSearchForm .room-search-tab {
   color: #35213f;
   font: 700 16px var(--dash-sans, system-ui, sans-serif);
 }
-body.room-active #catalogSearchForm .room-search-tab + .room-search-tab::before {
+#addPanel #catalogSearchForm .room-search-tab + .room-search-tab::before {
   content: '';
   position: absolute;
   left: 0;
@@ -161,14 +161,14 @@ body.room-active #catalogSearchForm .room-search-tab + .room-search-tab::before 
   width: 1px;
   background: #d5cbdc;
 }
-body.room-active #catalogSearchForm .room-search-tab.is-active {
+#addPanel #catalogSearchForm .room-search-tab.is-active {
   background: linear-gradient(110deg, #ead5f9, #f2e9ff);
   color: #441367;
   box-shadow: inset 0 -3px 0 #822fba;
 }
-body.room-active #catalogSearchForm .room-search-tab.is-active::before,
-body.room-active #catalogSearchForm .room-search-tab.is-active + .room-search-tab::before { display: none; }
-body.room-active #addPanel .room-result-topline {
+#addPanel #catalogSearchForm .room-search-tab.is-active::before,
+#addPanel #catalogSearchForm .room-search-tab.is-active + .room-search-tab::before { display: none; }
+#addPanel .room-result-topline {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -179,14 +179,14 @@ body.room-active #addPanel .room-result-topline {
   border-bottom: 1px solid var(--room-panel-border);
   padding: 0 2px 10px;
 }
-body.room-active #addPanel .search-status {
+#addPanel .search-status {
   min-width: 0;
   margin: 0;
   color: #35223f;
   font: 600 13px/1.5 var(--dash-sans, system-ui, sans-serif);
   overflow-wrap: anywhere;
 }
-body.room-active #addPanel .catalog-sort-row {
+#addPanel .catalog-sort-row {
   display: flex;
   flex: none;
   align-items: center;
@@ -194,8 +194,8 @@ body.room-active #addPanel .catalog-sort-row {
   padding: 0;
   gap: 4px;
 }
-body.room-active #addPanel .catalog-sort-row.hidden { display: none; }
-body.room-active #addPanel #catalogResultSort {
+#addPanel .catalog-sort-row.hidden { display: none; }
+#addPanel #catalogResultSort {
   width: auto;
   max-width: 92px;
   min-height: 33px;
@@ -208,7 +208,7 @@ body.room-active #addPanel #catalogResultSort {
   font: 600 13px var(--dash-sans, system-ui, sans-serif);
   cursor: pointer;
 }
-body.room-active #addPanel .catalog-results {
+#addPanel .catalog-results {
   display: flex;
   flex: 1 1 240px;
   flex-direction: column;
@@ -221,7 +221,7 @@ body.room-active #addPanel .catalog-results {
   scrollbar-color: #d7c7e3 transparent;
   overscroll-behavior: contain;
 }
-body.room-active #addPanel .catalog-result.dash-row {
+#addPanel .catalog-result.dash-row {
   display: flex;
   align-items: center;
   flex: none;
@@ -236,18 +236,18 @@ body.room-active #addPanel .catalog-result.dash-row {
   color: var(--room-panel-ink);
   box-shadow: none;
 }
-body.room-active #addPanel .catalog-result.dash-row:hover,
-body.room-active #addPanel .catalog-result.dash-row:focus-within {
+#addPanel .catalog-result.dash-row:hover,
+#addPanel .catalog-result.dash-row:focus-within {
   background: #f8f1fc;
   border-radius: 11px;
   border-color: #ded2e9;
 }
-body.room-active #addPanel .catalog-result.dash-row.is-selected {
+#addPanel .catalog-result.dash-row.is-selected {
   background: #f5eafb;
   border: 1.5px solid #8a38b8;
   border-radius: 13px;
 }
-body.room-active #addPanel .catalog-result .dash-row-open {
+#addPanel .catalog-result .dash-row-open {
   display: flex;
   flex: 1;
   align-items: center;
@@ -262,30 +262,30 @@ body.room-active #addPanel .catalog-result .dash-row-open {
   border-radius: 10px;
   text-align: left;
 }
-body.room-active #addPanel .catalog-result .dash-row-open:hover { background: transparent; }
-body.room-active #addPanel .catalog-result .dash-row-text { flex: 1; min-width: 0; }
-body.room-active #addPanel .catalog-result .dash-row-text strong,
-body.room-active #addPanel .catalog-result .dash-row-text small {
+#addPanel .catalog-result .dash-row-open:hover { background: transparent; }
+#addPanel .catalog-result .dash-row-text { flex: 1; min-width: 0; }
+#addPanel .catalog-result .dash-row-text strong,
+#addPanel .catalog-result .dash-row-text small {
   display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-body.room-active #addPanel .catalog-result .dash-row-text strong {
+#addPanel .catalog-result .dash-row-text strong {
   color: #1f1528;
   font-size: 16px;
   font-weight: 800;
   line-height: 1.5;
 }
-body.room-active #addPanel .catalog-result .dash-row-text small {
+#addPanel .catalog-result .dash-row-text small {
   margin-top: 1px;
   color: #5b4c69;
   font-size: 13px;
   line-height: 1.5;
 }
-body.room-active #addPanel .catalog-result .catalog-art.dash-row-art,
-body.room-active #addPanel .catalog-artist-result .dash-row-art.is-artist {
+#addPanel .catalog-result .catalog-art.dash-row-art,
+#addPanel .catalog-artist-result .dash-row-art.is-artist {
   position: relative;
   display: grid;
   place-items: center;
@@ -301,19 +301,19 @@ body.room-active #addPanel .catalog-artist-result .dash-row-art.is-artist {
   background: #ded1ea;
   color: #685179;
 }
-body.room-active #addPanel .catalog-artist-result .dash-row-art.is-artist,
-body.room-active #addPanel .catalog-artist-result .catalog-artist-avatar { border-radius: 50%; }
-body.room-active #addPanel .catalog-artist-result .catalog-artist-avatar {
+#addPanel .catalog-artist-result .dash-row-art.is-artist,
+#addPanel .catalog-artist-result .catalog-artist-avatar { border-radius: 50%; }
+#addPanel .catalog-artist-result .catalog-artist-avatar {
   position: absolute; inset: 0;
   display: grid; place-items: center;
   overflow: hidden; width: 100%; height: 100%;
   background: #e5d5ed;
 }
-body.room-active #addPanel .catalog-result .catalog-art.dash-row-art img,
-body.room-active #addPanel .catalog-result .dash-row-art img {
+#addPanel .catalog-result .catalog-art.dash-row-art img,
+#addPanel .catalog-result .dash-row-art img {
   display: block; width: 100%; height: 100%; object-fit: cover;
 }
-body.room-active #addPanel .catalog-result .album-art-hint {
+#addPanel .catalog-result .album-art-hint {
   position: absolute;
   bottom: 2px; right: 3px;
   padding: 1px 3px;
@@ -321,7 +321,7 @@ body.room-active #addPanel .catalog-result .album-art-hint {
   background: #321c438c;
   color: white; font-size: 9px;
 }
-body.room-active #addPanel .catalog-result .catalog-choose.room-result-pick {
+#addPanel .catalog-result .catalog-choose.room-result-pick {
   display: grid;
   place-items: center;
   flex: 0 0 36px;
@@ -332,46 +332,46 @@ body.room-active #addPanel .catalog-result .catalog-choose.room-result-pick {
   color: #4e365e;
   font: 500 26px/1 system-ui,sans-serif;
 }
-body.room-active #addPanel .catalog-result.is-selected .catalog-choose.room-result-pick {
+#addPanel .catalog-result.is-selected .catalog-choose.room-result-pick {
   background: var(--room-panel-purple);
   border-color: var(--room-panel-purple);
   color: transparent;
   font-size: 0;
 }
-body.room-active #addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after {
+#addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after {
   content: '✓';
   color: #fff;
   font: 800 20px/1 system-ui,sans-serif;
 }
-body.room-active #addPanel .catalog-result .dash-row-chevron {
+#addPanel .catalog-result .dash-row-chevron {
   flex: 0 0 28px; display: grid; place-items: center;
   margin: 0; color: #634c70;
   font: 300 28px/1 system-ui,sans-serif;
 }
-body.room-active #addPanel :is(#albumBack,.chosen-clear) {
+#addPanel :is(#albumBack,.chosen-clear) {
   border: 0; background: transparent;
   color: var(--room-panel-purple);
 }
-body.room-active #addPanel #albumBack { align-self:flex-start; margin-bottom:8px; padding:6px 0; }
-body.room-active #addPanel :is(.catalog-album-header,.catalog-artist-albums) {
+#addPanel #albumBack { align-self:flex-start; margin-bottom:8px; padding:6px 0; }
+#addPanel :is(.catalog-album-header,.catalog-artist-albums) {
   flex: none;
   background: #f6effa;
   border: 1px solid var(--room-panel-border);
   border-radius: 13px;
   color: var(--room-panel-ink);
 }
-body.room-active #addPanel :is(.catalog-album-header,.catalog-artist-albums) :is(strong,span,small) { color: inherit; }
-body.room-active #addPanel :is(.catalog-discography-card,.catalog-discography-art) {
+#addPanel :is(.catalog-album-header,.catalog-artist-albums) :is(strong,span,small) { color: inherit; }
+#addPanel :is(.catalog-discography-card,.catalog-discography-art) {
   border-color: var(--room-panel-border); background: white;
 }
-body.room-active #addPanel .room-search-options {
+#addPanel .room-search-options {
   flex: none;
   margin: 1px 0 12px;
   padding: 0;
   border: 0;
   color: var(--room-panel-ink);
 }
-body.room-active #addPanel .room-search-options > summary {
+#addPanel .room-search-options > summary {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -384,34 +384,34 @@ body.room-active #addPanel .room-search-options > summary {
   cursor: pointer;
   border-top: 1px solid var(--room-panel-border);
 }
-body.room-active #addPanel .room-search-options > summary::-webkit-details-marker,
-body.room-active #addPanel .room-song-extras > summary::-webkit-details-marker { display: none; }
-body.room-active #addPanel .room-settings-gear { font-size: 24px; line-height: 1; }
-body.room-active #addPanel .room-setting-chevron { margin-left:auto; font-size:26px; transform: rotate(0deg); transition: transform .15s; }
-body.room-active #addPanel .room-search-options[open] .room-setting-chevron { transform: rotate(90deg); }
-body.room-active #addPanel .room-search-options-body {
+#addPanel .room-search-options > summary::-webkit-details-marker,
+#addPanel .room-song-extras > summary::-webkit-details-marker { display: none; }
+#addPanel .room-settings-gear { font-size: 24px; line-height: 1; }
+#addPanel .room-setting-chevron { margin-left:auto; font-size:26px; transform: rotate(0deg); transition: transform .15s; }
+#addPanel .room-search-options[open] .room-setting-chevron { transform: rotate(90deg); }
+#addPanel .room-search-options-body {
   padding: 8px 12px 15px;
   border: 1px solid var(--room-panel-border);
   border-radius: 13px;
   background: #faf6fd;
 }
-body.room-active #addPanel .room-search-options-body label {
+#addPanel .room-search-options-body label {
   display:block; margin: 5px 0 7px;
   color: var(--room-panel-muted); font-weight: 700; font-size: 12px;
 }
-body.room-active #addPanel .room-search-options-body select,
-body.room-active #addPanel .catalog-filter-fields select {
+#addPanel .room-search-options-body select,
+#addPanel .catalog-filter-fields select {
   max-width: 100%; width: 100%; min-height: 41px;
   padding: 6px 9px;
   border: 1px solid #d7c8e4; border-radius: 10px;
   background: #fff; color: var(--room-panel-ink);
 }
-body.room-active #addPanel .room-search-options-body .catalog-filter-region { padding: 8px 0; }
-body.room-active #addPanel .room-search-options-body :is(.catalog-hint,.catalog-provider,.catalog-filter-description) {
+#addPanel .room-search-options-body .catalog-filter-region { padding: 8px 0; }
+#addPanel .room-search-options-body :is(.catalog-hint,.catalog-provider,.catalog-filter-description) {
   color: var(--room-panel-muted); font-size: 11px; line-height: 1.6;
 }
-body.room-active #addPanel .room-search-options-body .catalog-provider a { color: var(--room-panel-purple); }
-body.room-active #addPanel #addSongForm.room-add-footer {
+#addPanel .room-search-options-body .catalog-provider a { color: var(--room-panel-purple); }
+#addPanel #addSongForm.room-add-footer {
   position: sticky;
   z-index: 3;
   flex: none;
@@ -422,8 +422,8 @@ body.room-active #addPanel #addSongForm.room-add-footer {
   background: linear-gradient(180deg,#fcf9ff 0%,#fffaff 100%);
   box-shadow: 0 -10px 20px #fdf8ffab;
 }
-body.room-active #addPanel #addSongForm:has(> #selectedTrack.hidden) { display: none; }
-body.room-active #addPanel .selected-track {
+#addPanel #addSongForm:has(> #selectedTrack.hidden) { display: none; }
+#addPanel .selected-track {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -435,8 +435,8 @@ body.room-active #addPanel .selected-track {
   background: #f1eaf7;
   color: #34203f;
 }
-body.room-active #addPanel .chosen-count { flex: none; color: #2d183a; font-weight: 800; font-size: 13px; }
-body.room-active #addPanel .chosen-summary {
+#addPanel .chosen-count { flex: none; color: #2d183a; font-weight: 800; font-size: 13px; }
+#addPanel .chosen-summary {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -447,29 +447,29 @@ body.room-active #addPanel .chosen-summary {
   color: #3d2a4d;
   font-size: 13px;
 }
-body.room-active #addPanel .chosen-summary strong,
-body.room-active #addPanel .chosen-summary > span:last-child {
+#addPanel .chosen-summary strong,
+#addPanel .chosen-summary > span:last-child {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-body.room-active #addPanel .chosen-summary strong { font-weight: 600; }
-body.room-active #addPanel .chosen-dot { flex:none; }
-body.room-active #addPanel .chosen-clear {
+#addPanel .chosen-summary strong { font-weight: 600; }
+#addPanel .chosen-dot { flex:none; }
+#addPanel .chosen-clear {
   flex: none; width:26px; height:26px; margin:0; padding:0;
   color: #51345c; font-size: 19px;
   border: 0; border-radius: 50%; background: transparent;
 }
-body.room-active #addPanel .chosen-clear:hover { background: #e6d9ec; }
-body.room-active #addPanel .room-song-extras { margin: 0 0 10px; }
-body.room-active #addPanel .room-song-extras > summary {
+#addPanel .chosen-clear:hover { background: #e6d9ec; }
+#addPanel .room-song-extras { margin: 0 0 10px; }
+#addPanel .room-song-extras > summary {
   display: flex; align-items:center; justify-content: space-between;
   padding: 3px 3px 8px;
   color: #684479; font-weight: 700; font-size: 12px;
   cursor: pointer; list-style:none;
 }
-body.room-active #addPanel .room-song-extras > summary::before { content: '⌄'; margin-right:7px; }
-body.room-active #addPanel .room-song-extras > summary span { margin-left:auto; color: #87758e; font-weight: 500; }
-body.room-active #addPanel .room-song-extras[open] > summary::before { transform:rotate(180deg); }
-body.room-active #addPanel .room-song-extras-body {
+#addPanel .room-song-extras > summary::before { content: '⌄'; margin-right:7px; }
+#addPanel .room-song-extras > summary span { margin-left:auto; color: #87758e; font-weight: 500; }
+#addPanel .room-song-extras[open] > summary::before { transform:rotate(180deg); }
+#addPanel .room-song-extras-body {
   max-height: min(32dvh,290px);
   overflow-y:auto;
   margin: 0 0 10px;
@@ -477,17 +477,17 @@ body.room-active #addPanel .room-song-extras-body {
   border: 1px solid #e5d9ed; border-radius: 12px;
   background:#f8f1fb;
 }
-body.room-active #addPanel .field-label,
-body.room-active #addPanel .favorite-title { display:block; color: #392748; font-size: 12px; }
-body.room-active #addPanel .optional { color:#83708b; }
-body.room-active #addPanel #addSongForm :is(input,textarea) {
+#addPanel .field-label,
+#addPanel .favorite-title { display:block; color: #392748; font-size: 12px; }
+#addPanel .optional { color:#83708b; }
+#addPanel #addSongForm :is(input,textarea) {
   width:100%; border:1px solid #dbcee7; border-radius:9px;
   background:#fff; color:#281837;
   font-size:13px;
 }
-body.room-active #addPanel .room-selected-links { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
-body.room-active #addPanel .room-selected-links a { color:var(--room-panel-purple); font-size:12px; text-decoration:underline; }
-body.room-active #addPanel #submitSong {
+#addPanel .room-selected-links { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+#addPanel .room-selected-links a { color:var(--room-panel-purple); font-size:12px; text-decoration:underline; }
+#addPanel #submitSong {
   display:flex;
   align-items:center;
   justify-content:center;
@@ -500,45 +500,62 @@ body.room-active #addPanel #submitSong {
   box-shadow: none;
   font: 800 17px var(--dash-sans,system-ui,sans-serif);
 }
-body.room-active #addPanel #submitSong span { font-size: 24px; font-weight:400; }
-body.room-active #addPanel #submitSong:disabled { opacity:.5; cursor: not-allowed; }
-body.room-active #addPanel :is(button,input,select,summary,textarea):focus-visible {
+#addPanel #submitSong span { font-size: 24px; font-weight:400; }
+#addPanel #submitSong:disabled { opacity:.5; cursor: not-allowed; }
+#addPanel :is(button,input,select,summary,textarea):focus-visible {
   outline: 2px solid var(--room-panel-purple); outline-offset: 3px;
 }
 @media(max-width:640px) {
-  body.room-active #addPanel {
+  #addPanel {
     inset: auto 0 0;
     width:100%; max-height:96dvh; height:96dvh;
     padding:24px 18px 15px;
     border-radius:22px 22px 0 0;
     transform: translateY(110%);
   }
-  body.room-active #addPanel.panel-open { transform:translateY(0); }
-  body.room-active #addPanel .add-panel-close { top:13px;right:13px;width:40px;height:40px; }
-  body.room-active #addPanel .room-home-search-heading { padding:0 44px 0 4px; margin:0 0 18px; }
-  body.room-active #addPanel .room-home-search-heading h2 { font-size:27px; }
-  body.room-active #addPanel .room-home-search-heading p { font-size:13px; }
-  body.room-active #catalogSearchForm { gap:14px; margin-bottom:14px; }
-  body.room-active #catalogSearchForm .room-search-querybar { gap:7px; }
-  body.room-active #catalogSearchForm .room-search-field svg { left:12px;width:18px;height:18px; }
-  body.room-active #catalogSearchForm #songQuery { height:48px;padding-left:39px;font-size:12px; }
-  body.room-active #catalogSearchForm .room-home-search-button { height:48px; min-width:65px;padding:0 12px; font-size:14px; }
-  body.room-active #catalogSearchForm .room-search-tabs { min-height:48px; }
-  body.room-active #catalogSearchForm .room-search-tab { font-size:14px; }
-  body.room-active #addPanel .catalog-result.dash-row { min-height:67px; padding:3px 2px; }
-  body.room-active #addPanel .catalog-result .dash-row-open { min-height:53px;padding:3px 7px;gap:9px; }
-  body.room-active #addPanel .catalog-result .catalog-art.dash-row-art,
-  body.room-active #addPanel .catalog-artist-result .dash-row-art.is-artist { flex-basis:50px;width:50px;height:50px;min-width:50px;margin-left:2px; }
-  body.room-active #addPanel .catalog-result .dash-row-text strong { font-size:14px; }
-  body.room-active #addPanel .catalog-result .dash-row-text small { font-size:11px; }
-  body.room-active #addPanel .catalog-result .catalog-choose.room-result-pick { flex-basis:30px;width:30px;height:30px;font-size:23px; }
-  body.room-active #addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after { font-size:17px; }
-  body.room-active #addPanel #addSongForm.room-add-footer { bottom:-15px; margin:auto -18px -15px; padding:9px 18px calc(14px + env(safe-area-inset-bottom,0px)); }
-  body.room-active #addPanel .selected-track { padding:8px;gap:5px; }
-  body.room-active #addPanel .chosen-count { font-size:11px; }
-  body.room-active #addPanel .chosen-summary { font-size:11px;gap:4px; }
-  body.room-active #addPanel #submitSong { min-height:52px;font-size:15px; }
+  #addPanel.panel-open { transform:translateY(0); }
+  #addPanel .add-panel-close { top:13px;right:13px;width:40px;height:40px; }
+  #addPanel .room-home-search-heading { padding:0 44px 0 4px; margin:0 0 18px; }
+  #addPanel .room-home-search-heading h2 { font-size:27px; }
+  #addPanel .room-home-search-heading p { font-size:13px; }
+  #addPanel #catalogSearchForm { gap:14px; margin-bottom:14px; }
+  #addPanel #catalogSearchForm .room-search-querybar { gap:7px; }
+  #addPanel #catalogSearchForm .room-search-field svg { left:12px;width:18px;height:18px; }
+  #addPanel #catalogSearchForm #songQuery { height:48px;padding-left:39px;font-size:12px; }
+  #addPanel #catalogSearchForm .room-home-search-button { height:48px; min-width:65px;padding:0 12px; font-size:14px; }
+  #addPanel #catalogSearchForm .room-search-tabs { min-height:48px; }
+  #addPanel #catalogSearchForm .room-search-tab { font-size:14px; }
+  #addPanel .catalog-result.dash-row { min-height:67px; padding:3px 2px; }
+  #addPanel .catalog-result .dash-row-open { min-height:53px;padding:3px 7px;gap:9px; }
+  #addPanel .catalog-result .catalog-art.dash-row-art,
+  #addPanel .catalog-artist-result .dash-row-art.is-artist { flex-basis:50px;width:50px;height:50px;min-width:50px;margin-left:2px; }
+  #addPanel .catalog-result .dash-row-text strong { font-size:14px; }
+  #addPanel .catalog-result .dash-row-text small { font-size:11px; }
+  #addPanel .catalog-result .catalog-choose.room-result-pick { flex-basis:30px;width:30px;height:30px;font-size:23px; }
+  #addPanel .catalog-result.is-selected .catalog-choose.room-result-pick::after { font-size:17px; }
+  #addPanel #addSongForm.room-add-footer { bottom:-15px; margin:auto -18px -15px; padding:9px 18px calc(14px + env(safe-area-inset-bottom,0px)); }
+  #addPanel .selected-track { padding:8px;gap:5px; }
+  #addPanel .chosen-count { font-size:11px; }
+  #addPanel .chosen-summary { font-size:11px;gap:4px; }
+  #addPanel #submitSong { min-height:52px;font-size:15px; }
 }
 @media(prefers-reduced-motion:reduce) {
-  body.room-active #addPanel .room-setting-chevron { transition:none; }
+  #addPanel .room-setting-chevron { transition:none; }
+}
+
+/* Hardening: styles and control icons must not inherit legacy dark-theme dimensions. */
+#addPanel, #addPanel *, #addPanel *::before, #addPanel *::after { box-sizing: border-box; }
+#addPanel { isolation: isolate; }
+#addPanel .room-search-field > svg { display: block; max-width: 22px; max-height: 22px; }
+#addPanel .room-home-search-heading h2,
+#addPanel .room-home-search-heading p { text-shadow: none; }
+#addPanel .room-search-native-mode { display: none !important; }
+#addPanel .room-search-querybar { flex-wrap: nowrap; }
+#addPanel #catalogSearchForm .room-search-field { width: auto; }
+#addPanel .catalog-results .catalog-result { max-width:100%; }
+#addPanel:where(:not(.panel-open)) { pointer-events: none; }
+@media (max-width:640px) {
+  #addPanel .room-search-field > svg { max-width:18px;max-height:18px; }
+  #addPanel #catalogSearchForm #songQuery { min-width: 0; }
+  #addPanel .room-home-search-heading { padding-right: 48px; }
 }

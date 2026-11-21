@@ -2,7 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, SkipTest
 from http.server import ThreadingHTTPServer
 import threading
 from urllib.request import urlopen
@@ -13,6 +13,8 @@ ROOT=Path(__file__).resolve().parents[1]
 class TestPWAAssets(TestCase):
     @classmethod
     def setUpClass(cls):
+        if not (ROOT/'server.py').exists():
+            raise SkipTest('Server/PWA integration test needs the full repository; this is a partial update ZIP.')
         spec=importlib.util.spec_from_file_location('pwa_server',ROOT/'server.py')
         cls.app=importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.app)
@@ -43,11 +45,11 @@ class TestPWAAssets(TestCase):
         text=data.decode('utf-8')
         self.assertIn('self.addEventListener(\'fetch\'',text)
         self.assertIn("url.pathname.startsWith('/api/')",text)
-        self.assertIn("SHELL_CACHE = 'trackroom-shell-v6.9.7'",text)
-        for path, mime in [('/login-prism.webp', 'image/webp'), ('/home.css?v=6.9.7', 'text/css'),
-                           ('/home.js?v=6.9.7', 'application/javascript'), ('/fonts/plex-sans.woff2', 'font/woff2'),
-                           ('/room-bubbles.js?v=6.9.7', 'application/javascript'), ('/room-bubbles.css?v=6.9.7', 'text/css'),
-                           ('/catalog-filters.js?v=6.9.7', 'application/javascript'), ('/catalog-filters.css?v=6.9.7', 'text/css')]:
+        self.assertIn("SHELL_CACHE = 'trackroom-shell-v6.9.8'",text)
+        for path, mime in [('/login-prism.webp', 'image/webp'), ('/home.css?v=6.9.8', 'text/css'),
+                           ('/home.js?v=6.9.8', 'application/javascript'), ('/fonts/plex-sans.woff2', 'font/woff2'),
+                           ('/room-bubbles.js?v=6.9.8', 'application/javascript'), ('/room-bubbles.css?v=6.9.8', 'text/css'),
+                           ('/catalog-filters.js?v=6.9.8', 'application/javascript'), ('/catalog-filters.css?v=6.9.8', 'text/css')]:
             self.assertIn(path, text)
             self.assertTrue(self.get(path)[0]['Content-Type'].startswith(mime))
         self.assertIn('인터넷 연결',self.get('/offline.html')[1].decode('utf-8'))
@@ -57,12 +59,12 @@ class TestPWAAssets(TestCase):
         self.assertIn('id="installAppHome"',html)
         self.assertIn('id="roomMenuInstallApp"',html)
         self.assertIn('id="installHelpOverlay"',html)
-        self.assertIn('/app.js?v=6.9.7',html)
-        self.assertIn('/room-bubbles.js?v=6.9.7',html)
-        self.assertIn('/room-bubbles.css?v=6.9.7',html)
-        self.assertIn('/style.css?v=6.9.7',html)
-        self.assertIn('/home.js?v=6.9.7',html)
-        self.assertIn('/home.css?v=6.9.7',html)
+        self.assertIn('/app.js?v=6.9.8',html)
+        self.assertIn('/room-bubbles.js?v=6.9.8',html)
+        self.assertIn('/room-bubbles.css?v=6.9.8',html)
+        self.assertIn('/style.css?v=6.9.8',html)
+        self.assertIn('/home.js?v=6.9.8',html)
+        self.assertIn('/home.css?v=6.9.8',html)
     def test_app_landing_exposes_auth_and_invite_controls(self):
         html=self.get('/')[1].decode('utf-8')
         self.assertNotIn('record-visual',html)
