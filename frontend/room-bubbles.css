@@ -414,3 +414,91 @@ body.room-active .room-playback-overlay::backdrop {
   text-underline-offset:3px;
 }
 .room-playback-overlay button:focus-visible { outline:2px solid var(--room-violet); outline-offset:3px; }
+
+/* v6.9.2: approved two-mode player geometry. Keep album bubbles flat. */
+/* Browsing: the active cover is 1.5x the native viewport-scaled tile. */
+body.room-active #bubbleStage .room-bubble-tile:has(> .room-bubble-progress) {
+  transform: scale(calc(var(--viewport-bubble-scale, 1) * 1.5));
+  z-index: 7;
+}
+body.room-active #bubbleStage ._3cleF:has(> .room-bubble-tile > .room-bubble-progress) {
+  z-index: 7;
+}
+/* Browsing controls: three unframed glyphs positioned INSIDE the cover. */
+body.room-active #bubbleStage .room-bubble-preview-controls button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  text-shadow: none;
+  box-shadow: none;
+}
+body.room-active #bubbleStage .room-bubble-preview-controls svg {
+  filter: drop-shadow(0 1px 3px rgba(31, 16, 49, .55));
+}
+/* Expanded overlay: previous and shuffled next are OUTSIDE the large circle. */
+body.room-active .room-playback-overlay[open] {
+  padding-bottom: calc(124px + env(safe-area-inset-bottom, 0px));
+}
+body.room-active .room-playback-feature {
+  width: min(100%, 430px);
+  max-height: calc(100dvh - 175px);
+}
+body.room-active .room-playback-wheel {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  margin: 0 auto 18px;
+}
+body.room-active .room-playback-wheel .room-playback-cover {
+  width: min(var(--room-playback-diameter, 204px), 100%, 300px, 43dvh);
+  margin: 0 auto;
+}
+body.room-active .room-playback-side {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #5e3c95;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+body.room-active .room-playback-side svg { width: 28px; height: 28px; fill: currentColor; }
+body.room-active .room-playback-side:disabled { opacity: .30; cursor: default; }
+body.room-active .room-playback-side:not(:disabled):active { transform: scale(.93); }
+/* Enlarged cover: only a free-floating play/pause glyph, no button disc. */
+body.room-active .room-playback-toggle {
+  width: 72px;
+  height: 72px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 3px #21163190);
+}
+body.room-active .room-playback-toggle svg { width: 31px; height: 31px; }
+/* Keep the ACTUAL room mini-player visible and usable in the modal top layer. */
+body.room-active .room-playback-overlay[open] > .room-preview-bar {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  width: min(550px, calc(100% - 24px));
+  transform: translateX(-50%);
+  border-color: #e4daeee0;
+  background: rgba(253, 251, 255, .92);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+@media(max-height: 590px) {
+  body.room-active .room-playback-wheel .room-playback-cover { width: min(var(--room-playback-diameter, 204px), 100%, 210px, 36dvh); }
+  body.room-active .room-playback-feature h2 { font-size: 18px; }
+  body.room-active .room-playback-overlay[open] { padding-top: 10px; }
+}

@@ -357,6 +357,21 @@ function updateRoomPreviewCover(cover, original, size) {
   else cover.removeAttribute('src');
 }
 
+// The modal is a browser top-layer element: elements left behind in #roomView
+// are obscured by its backdrop. Reparent the EXISTING bar (with its listeners)
+// while expanded, and restore it when the dialog closes. This avoids a second
+// audio element or an out-of-sync duplicate player.
+function dockRoomPreviewBar() {
+  const bar = $('roomPreviewBar');
+  const overlay = $('roomPlaybackOverlay');
+  if (bar.parentElement !== overlay) overlay.appendChild(bar);
+}
+function restoreRoomPreviewBar() {
+  const bar = $('roomPreviewBar');
+  const overlay = $('roomPlaybackOverlay');
+  if (bar.parentElement === overlay) overlay.parentElement.insertBefore(bar, overlay);
+}
+
 function openRoomPlayback() {
   const overlay = $('roomPlaybackOverlay');
   const preview = dashboard.getPreview();
@@ -374,7 +389,9 @@ function openRoomPlayback() {
     }
   }
   overlay.style.setProperty('--room-playback-diameter', `${Math.max(184, Math.round(largest * 2))}px`);
-  overlay.showModal();
+  dockRoomPreviewBar();
+  try { overlay.showModal(); }
+  catch (error) { restoreRoomPreviewBar(); throw error; }
   syncRoomPreview(preview);
 }
 
@@ -408,6 +425,8 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   $('roomPreviewPlayIcon').setAttribute('d', playPath);
   $('roomPreviewPrevious').disabled = !previous;
   $('roomPreviewNext').disabled = !next;
+  $('roomPlaybackPrevious').disabled = !previous;
+  $('roomPlaybackNext').disabled = !next;
   const seek = $('roomPreviewSeek');
   seek.disabled = !preview.duration;
   if (document.activeElement !== seek || !seek.matches(':active')) {
@@ -528,10 +547,13 @@ function initBubbleCanvas() {
   $('roomPreviewDetails').addEventListener('click', openRoomPlayback);
   const playbackOverlay = $('roomPlaybackOverlay');
   $('roomPlaybackClose').addEventListener('click', () => playbackOverlay.close());
+  playbackOverlay.addEventListener('close', restoreRoomPreviewBar);
   playbackOverlay.addEventListener('click', event => {
     if (event.target === playbackOverlay) playbackOverlay.close();
   });
   $('roomPlaybackToggle').addEventListener('click', () => roomPreviewAction('toggle'));
+  $('roomPlaybackPrevious').addEventListener('click', () => roomPreviewAction('previous'));
+  $('roomPlaybackNext').addEventListener('click', () => roomPreviewAction('next'));
   $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
     playbackOverlay.close();

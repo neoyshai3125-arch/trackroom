@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.9.1" />
-  <link rel="stylesheet" href="/home.css?v=6.9.1" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.1" />
-  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.1" />
+  <link rel="stylesheet" href="/style.css?v=6.9.2" />
+  <link rel="stylesheet" href="/home.css?v=6.9.2" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.2" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.2" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
 </head>
 <body>
@@ -171,7 +171,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.1</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.2</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -259,15 +259,23 @@
       <dialog id="roomPlaybackOverlay" class="room-playback-overlay" aria-labelledby="roomPlaybackTitle">
         <button id="roomPlaybackClose" class="room-playback-close" type="button" aria-label="재생 화면 닫기" autofocus>×</button>
         <div class="room-playback-feature">
-          <div class="room-playback-cover">
-            <img id="roomPlaybackCover" class="hidden" alt="" referrerpolicy="no-referrer" />
-            <span class="room-playback-no-cover" aria-hidden="true">♫</span>
-            <svg class="room-playback-ring" viewBox="0 0 100 100" aria-hidden="true">
-              <circle class="room-playback-track" cx="50" cy="50" r="47" />
-              <circle class="room-playback-progress" cx="50" cy="50" r="47" pathLength="100" transform="rotate(-90 50 50)" />
-            </svg>
-            <button id="roomPlaybackToggle" class="room-playback-toggle" type="button" aria-label="미리듣기 재생">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path id="roomPlaybackIcon" d="M7 4l14 8L7 20z" /></svg>
+          <div class="room-playback-wheel" role="group" aria-label="확대 재생 화면">
+            <button id="roomPlaybackPrevious" class="room-playback-side" type="button" aria-label="이전 곡" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2v14H5zm14 0L8 12l11 7z" /></svg>
+            </button>
+            <div class="room-playback-cover">
+              <img id="roomPlaybackCover" class="hidden" alt="" referrerpolicy="no-referrer" />
+              <span class="room-playback-no-cover" aria-hidden="true">♫</span>
+              <svg class="room-playback-ring" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="room-playback-track" cx="50" cy="50" r="47" />
+                <circle class="room-playback-progress" cx="50" cy="50" r="47" pathLength="100" transform="rotate(-90 50 50)" />
+              </svg>
+              <button id="roomPlaybackToggle" class="room-playback-toggle" type="button" aria-label="미리듣기 재생">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path id="roomPlaybackIcon" d="M7 4l14 8L7 20z" /></svg>
+              </button>
+            </div>
+            <button id="roomPlaybackNext" class="room-playback-side" type="button" aria-label="다음 곡 셔플" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5h2v14h-2zM5 5l11 7-11 7z" /></svg>
             </button>
           </div>
           <h2 id="roomPlaybackTitle"></h2>
@@ -320,9 +328,9 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/catalog-filters.js?v=6.9.1" defer></script>
-  <script src="/home.js?v=6.9.1" defer></script>
-  <script src="/room-bubbles.js?v=6.9.1" defer></script>
-  <script src="/app.js?v=6.9.1" defer></script>
+  <script src="/catalog-filters.js?v=6.9.2" defer></script>
+  <script src="/home.js?v=6.9.2" defer></script>
+  <script src="/room-bubbles.js?v=6.9.2" defer></script>
+  <script src="/app.js?v=6.9.2" defer></script>
 </body>
 </html>
