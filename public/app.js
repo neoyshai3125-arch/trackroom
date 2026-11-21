@@ -349,23 +349,50 @@ function activeRoomPreview(preview = dashboard.getPreview()) {
   return state.songs.find(song => song.id === preview.track.id) || null;
 }
 
+function updateRoomPreviewCover(cover, original, size) {
+  if (cover.dataset.original === original) return;
+  cover.dataset.original = original;
+  cover.classList.toggle('hidden', !original);
+  if (original) cover.src = highResArtworkUrl(original, size);
+  else cover.removeAttribute('src');
+}
+
+function openRoomPlayback() {
+  const overlay = $('roomPlaybackOverlay');
+  const preview = dashboard.getPreview();
+  const song = activeRoomPreview(preview);
+  if (overlay.open || !song) return;
+  closeBubbleDetail();
+  const stage = $('bubbleStage');
+  const viewport = stage.getBoundingClientRect();
+  let largest = 0;
+  for (const bubble of stage.querySelectorAll('.music-bubble')) {
+    const rect = bubble.getBoundingClientRect();
+    if (rect.right > viewport.left && rect.left < viewport.right &&
+        rect.bottom > viewport.top && rect.top < viewport.bottom) {
+      largest = Math.max(largest, rect.width);
+    }
+  }
+  overlay.style.setProperty('--room-playback-diameter', `${Math.max(184, Math.round(largest * 2))}px`);
+  overlay.showModal();
+  syncRoomPreview(preview);
+}
+
 function syncRoomPreview(preview = dashboard.getPreview()) {
   const song = activeRoomPreview(preview);
   const active = Boolean(song);
+  const overlay = $('roomPlaybackOverlay');
   $('roomPreviewBar').classList.toggle('hidden', !active);
   $('roomView').classList.toggle('has-room-preview', active);
   const previous = active && roomPreviewHistory.some(id => state.songs.some(item => item.id === id && id !== song.id));
   const next = active && state.songs.length > 1;
   roomBubbles?.setPreview(active ? {id: song.id, playing: preview.playing, loading: preview.loading, previous, next} : null);
-  if (!active) return;
-
-  const cover = $('roomPreviewCover');
-  if (cover.dataset.original !== preview.cover) {
-    cover.dataset.original = preview.cover;
-    cover.classList.toggle('hidden', !preview.cover);
-    if (preview.cover) cover.src = highResArtworkUrl(preview.cover, 180);
-    else cover.removeAttribute('src');
+  if (!active) {
+    if (overlay.open) overlay.close();
+    return;
   }
+
+  updateRoomPreviewCover($('roomPreviewCover'), preview.cover, 180);
   $('roomPreviewTitle').textContent = song.title;
   $('roomPreviewArtist').textContent = song.artist;
   if ($('roomPreviewStatus').textContent !== preview.status) $('roomPreviewStatus').textContent = preview.status;
@@ -375,8 +402,10 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
     store.href = preview.store;
     store.textContent = new URL(preview.store).hostname === 'itunes.apple.com' ? 'iTunes Store ↗' : 'Apple Music ↗';
   } else store.removeAttribute('href');
-  $('roomPreviewPlay').setAttribute('aria-label', preview.loading ? '미리듣기 준비 취소' : preview.playing ? '일시정지' : '미리듣기 재생');
-  $('roomPreviewPlayIcon').setAttribute('d', preview.playing || preview.loading ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z');
+  const playLabel = preview.loading ? '미리듣기 준비 취소' : preview.playing ? '일시정지' : '미리듣기 재생';
+  const playPath = preview.playing || preview.loading ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z';
+  $('roomPreviewPlay').setAttribute('aria-label', playLabel);
+  $('roomPreviewPlayIcon').setAttribute('d', playPath);
   $('roomPreviewPrevious').disabled = !previous;
   $('roomPreviewNext').disabled = !next;
   const seek = $('roomPreviewSeek');
@@ -388,6 +417,20 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   $('roomPreviewTime').textContent = preview.duration ? `${timeLabel(preview.position)} / ${timeLabel(preview.duration)}` : '0:00 / –:––';
   const progress = preview.duration ? Math.min(100, preview.position / preview.duration * 100) : 0;
   $('bubbleStage').style.setProperty('--room-preview-progress', String(progress));
+
+  const playbackTitle = $('roomPlaybackTitle');
+  if (playbackTitle.textContent !== song.title) playbackTitle.textContent = song.title;
+  if (!overlay.open) return;
+  updateRoomPreviewCover($('roomPlaybackCover'), preview.cover, 600);
+  overlay.style.setProperty('--room-playback-art', artColor(song.title));
+  overlay.style.setProperty('--room-preview-progress', String(progress));
+  $('roomPlaybackArtist').textContent = song.artist;
+  $('roomPlaybackToggle').setAttribute('aria-label', playLabel);
+  $('roomPlaybackIcon').setAttribute('d', playPath);
+  const status = $('roomPlaybackStatus');
+  const message = preview.status === 'Apple 미리듣기' ? '' : preview.status;
+  if (status.textContent !== message) status.textContent = message;
+  status.classList.toggle('hidden', !message);
 }
 
 function startRoomPreview(song, keepHistory = true) {
@@ -471,8 +514,8 @@ function initBubbleCanvas() {
       if (!song) return;
       if (activeRoomPreview()?.id === songId) openBubbleDetail(songId);
       else {
-        closeBubbleDetail();
         startRoomPreview(song);
+        openRoomPlayback();
       }
     },
     onControl: roomPreviewAction,
@@ -482,16 +525,25 @@ function initBubbleCanvas() {
   $('roomPreviewPlay').addEventListener('click', () => roomPreviewAction('toggle'));
   $('roomPreviewPrevious').addEventListener('click', () => roomPreviewAction('previous'));
   $('roomPreviewNext').addEventListener('click', () => roomPreviewAction('next'));
-  $('roomPreviewDetails').addEventListener('click', () => {
+  $('roomPreviewDetails').addEventListener('click', openRoomPlayback);
+  const playbackOverlay = $('roomPlaybackOverlay');
+  $('roomPlaybackClose').addEventListener('click', () => playbackOverlay.close());
+  playbackOverlay.addEventListener('click', event => {
+    if (event.target === playbackOverlay) playbackOverlay.close();
+  });
+  $('roomPlaybackToggle').addEventListener('click', () => roomPreviewAction('toggle'));
+  $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
+    playbackOverlay.close();
     if (song) openBubbleDetail(song.id);
   });
   $('roomPreviewSeek').addEventListener('input', event => dashboard.seekPreview(Number(event.currentTarget.value)));
-  $('roomPreviewCover').addEventListener('error', event => {
-    const cover = event.currentTarget;
-    if (cover.dataset.original && cover.src !== cover.dataset.original) cover.src = cover.dataset.original;
-    else cover.classList.add('hidden');
-  });
+  for (const cover of [$('roomPreviewCover'), $('roomPlaybackCover')]) {
+    cover.addEventListener('error', () => {
+      if (cover.dataset.original && cover.src !== cover.dataset.original) cover.src = cover.dataset.original;
+      else cover.classList.add('hidden');
+    });
+  }
   const directions = {ArrowLeft: [-65, 0], ArrowRight: [65, 0], ArrowUp: [0, -65], ArrowDown: [0, 65]};
   canvas.addEventListener('keydown', event => {
     if (event.target !== canvas && !event.target.closest('.music-bubble')) return;
@@ -993,6 +1045,7 @@ async function init() {
   $('logoutButton').addEventListener('click',logout);
   $('profileOverlay').addEventListener('click', e => { if(e.target === e.currentTarget) hideProfile(); });
   document.addEventListener('keydown', e => {
+    if ($('roomPlaybackOverlay').open) return;
     if (e.key === 'Escape') { hideProfile(); closeInstallHelp(); closeBubbleDetail(); closeAddPanel(); closeRoomMenu(); }
     if (e.key === 'Tab' && roomMenuOpen && !$('roomMenu').classList.contains('hidden')) {
       const focusable = [...$('roomMenu').querySelectorAll('button:not(:disabled)')];
