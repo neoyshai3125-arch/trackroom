@@ -126,8 +126,7 @@ body.room-active .room-playback-dial:focus-visible {
 }
 body.room-active .room-playback-cover > img,
 body.room-active .room-playback-cover > .room-playback-no-cover {
-  transform: rotate(var(--room-scratch-rotation, 0deg));
-  transform-origin: center;
+  /* Album art stays fixed while the user's circular drag seeks playback. */
   pointer-events: none;
 }
 body.room-active .room-playback-toggle { z-index: 4; touch-action: manipulation; }

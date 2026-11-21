@@ -16,7 +16,6 @@ let roomSearchFilters;
 const roomPreviewHistory = [];
 const roomPreviewSeen = new Set();
 let roomPlaybackScrub = null; // draft position while dragging the whole record
-let roomPlaybackRotation = 0; // accumulated visual rotation of the album artwork
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -440,10 +439,7 @@ function initRoomPlaybackDial() {
     const duration = previewDuration();
     current.position = Math.max(0, Math.min(duration - .05,
       current.position + change / (2 * Math.PI) * duration));
-    // The cover artwork turns with the finger, while the progress rim stays
-    // fixed and reflects the new listening position.
-    roomPlaybackRotation += change * 180 / Math.PI;
-    cover.style.setProperty('--room-scratch-rotation', `${roomPlaybackRotation}deg`);
+    // Only advance the preview position; the album artwork stays stationary.
     renderRoomPlaybackDial();
   });
   const finish = event => {
@@ -658,10 +654,8 @@ function initBubbleCanvas() {
   initRoomPlaybackDial();
   playbackOverlay.addEventListener('close', () => {
     roomPlaybackScrub = null;
-    roomPlaybackRotation = 0;
     $('roomPlaybackDial').classList.remove('scrubbing');
     $('roomPlaybackCover').parentElement.classList.remove('scrubbing');
-    $('roomPlaybackCover').parentElement.style.removeProperty('--room-scratch-rotation');
   });
   $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
