@@ -37,6 +37,10 @@ async function api(path, options = {}) {
   if (!response.ok) throw new Error(data.error || `오류가 발생했습니다. (${response.status})`);
   return data;
 }
+window.TrackroomNativeStatus = (message, error = false) => toast(message, error);
+window.TrackroomRoomStreamSelectedId = () => bubbleSelectedId;
+window.TrackroomRoomStreamSongById = id => state.songs.find(song => song.id === id);
+window.TrackroomRoomStreamActiveSong = () => activeRoomPreview();
 const PLATFORM_NAMES = { spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니뮤직', flo: 'FLO', bugs: '벅스', youtube: 'YouTube Music', other: '기타', none: '미설정' };
 function showAuth(mode = 'login', moveFocus = true) {
   state.authMode = mode;
@@ -318,6 +322,7 @@ function renderBubbleDetail(song) {
     <h3>${escaped(song.title)}</h3><p class="bubble-detail-artist">${escaped(song.artist)}</p>
     ${song.note ? `<p class="bubble-detail-note">“${escaped(song.note)}”</p>` : ''}
     ${range}
+    ${window.TrackroomStreaming?.enabled ? window.TrackroomStreaming.controls(song) : ''}
     <div class="bubble-detail-actions">
       <button type="button" class="like bubble-like${song.liked ? ' liked':''}" data-action="like" data-id="${song.id}" aria-label="좋아요 ${song.likeCount}개">${song.liked ? '♥' : '♡'} ${song.likeCount}</button>
       ${song.musicUrl ? `<a class="bubble-link" href="${escaped(song.musicUrl)}" target="_blank" rel="noopener noreferrer">${escaped(provider)}에서 보기 ↗</a>` : ''}
@@ -325,6 +330,7 @@ function renderBubbleDetail(song) {
       ${owned ? `<button type="button" class="icon-plain bubble-delete" data-action="delete" data-id="${song.id}">삭제</button>` : ''}
     </div>`;
   $('bubbleDetail').classList.remove('hidden');
+  window.TrackroomStreaming?.bind($('bubbleDetail'));
 }
 function openBubbleDetail(songId) {
   const song = state.songs.find(song => song.id === songId);
@@ -469,6 +475,13 @@ function initRoomPlaybackDial() {
 }
 
 function openRoomPlayback() {
+  const streamSlot = $('roomStreamControls');
+  if (streamSlot) {
+    const track = activeRoomPreview();
+    streamSlot.innerHTML = window.TrackroomStreaming?.enabled && track ? window.TrackroomStreaming.controls(track) : '';
+    window.TrackroomStreaming?.bind(streamSlot);
+  }
+
   const overlay = $('roomPlaybackOverlay');
   const preview = dashboard.getPreview();
   const song = activeRoomPreview(preview);
@@ -637,6 +650,7 @@ function initBubbleCanvas() {
     onControl: roomPreviewAction,
     onZoom: zoom => { $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`; }
   });
+  window.addEventListener('trackroom:external-stream', () => dashboard.pausePreview());
   dashboard.watchPreview(syncRoomPreview);
   $('roomPreviewPlay').addEventListener('click', () => roomPreviewAction('toggle'));
   $('roomPreviewPrevious').addEventListener('click', () => roomPreviewAction('previous'));
@@ -657,6 +671,7 @@ function initBubbleCanvas() {
     $('roomPlaybackDial').classList.remove('scrubbing');
     $('roomPlaybackCover').parentElement.classList.remove('scrubbing');
   });
+  window.TrackroomStreaming?.bind($('roomPlaybackOverlay'));
   $('roomPlaybackDetails').addEventListener('click', () => {
     const song = activeRoomPreview();
     playbackOverlay.close();

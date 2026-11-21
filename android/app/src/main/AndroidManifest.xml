@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <queries>
+        <package android:name="com.spotify.music"/>
+        <package android:name="com.iloen.melon"/>
+        <package android:name="com.ktmusic.geniemusic"/>
+        <package android:name="skplanet.musicmate"/>
+        <package android:name="com.neowiz.android.bugs"/>
+        <package android:name="com.google.android.apps.youtube.music"/>
+        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>
+    </queries>
+    <!-- The app only loads an explicitly configured HTTPS TRACKROOM origin.
+         No unrestricted JavascriptInterface is exposed to remote content. -->
+    <application
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.Trackroom"
+        android:label="@string/app_name">
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="unspecified">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

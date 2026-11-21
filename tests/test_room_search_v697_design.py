@@ -1,4 +1,4 @@
-"""Regression checks for v6.9.8 design and existing song-add behavior."""
+"""Regression checks for v6.9.9 design and existing song-add behavior."""
 from pathlib import Path
 from html.parser import HTMLParser
 import unittest
@@ -54,6 +54,6 @@ class TestAddMusicDrawerDesign(unittest.TestCase):
         self.assertIn('const endSeconds = parseTime',self.js)
     def test_cache_version(self):
         sw=(ROOT/'public/sw.js').read_text()
-        self.assertIn('trackroom-shell-v6.9.8',sw)
+        self.assertIn('trackroom-shell-v6.9.9',sw)
         self.assertIn('<style id="room-search-v698-critical">',self.html)
-        self.assertIn('v6.9.8</span>',self.html)
+        self.assertIn('v6.9.9</span>',self.html)

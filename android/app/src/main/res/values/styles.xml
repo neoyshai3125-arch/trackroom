@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Trackroom" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#FDFBFF</item>
+        <item name="android:navigationBarColor">#FDFBFF</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">#7133A0</item>
+    </style>
+</resources>

@@ -26,6 +26,6 @@ class TestFullDiscScrub(unittest.TestCase):
         html=(R/'public/index.html').read_text()
         sw=(R/'public/sw.js').read_text()
         self.assertIn('앨범 커버를 돌려 재생 위치 조절',html)
-        self.assertIn('v6.9.8</span>',html)
-        self.assertIn("'trackroom-shell-v6.9.8'",sw)
+        self.assertIn('v6.9.9</span>',html)
+        self.assertIn("'trackroom-shell-v6.9.9'",sw)
 if __name__=='__main__': unittest.main()

@@ -11,10 +11,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.9.8" />
-  <link rel="stylesheet" href="/home.css?v=6.9.8" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.8" />
-  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.8" />
+  <link rel="stylesheet" href="/style.css?v=6.9.9" />
+  <link rel="stylesheet" href="/home.css?v=6.9.9" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.9" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.9" />
+  <link rel="stylesheet" href="/native-streaming.css?v=6.9.9" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
   <!-- v6.9.8: Embedded drawer CSS prevents missing-file/cache mismatches on mobile/PWA. -->
   <style id="room-search-v698-critical">
@@ -736,7 +737,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.8</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.9</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -872,6 +873,7 @@
           <h2 id="roomPlaybackTitle"></h2>
           <p id="roomPlaybackArtist"></p>
           <p id="roomPlaybackStatus" class="hidden" role="status"></p>
+          <div id="roomStreamControls" class="trackroom-stream-slot" aria-label="스트리밍 앱 선택"></div>
           <button id="roomPlaybackDetails" class="room-playback-details" type="button">곡 상세 보기</button>
         </div>
       </dialog>
@@ -905,7 +907,7 @@
       </form>
       <button type="button" id="installAppHome" class="btn btn-outline btn-wide">홈 화면에 TRACKROOM 설치</button>
       <button id="logoutButton" class="btn btn-outline btn-wide" type="button">로그아웃 <span>→</span></button>
-      <p class="auth-fineprint">음원 서비스 선택은 선호도 저장용이야. 실제 Spotify·멜론 로그인 연결은 아직 지원하지 않아.</p>
+      <p class="auth-fineprint">웹에서는 선호도 저장용이야. Android 앱에서는 Spotify 개발용 연결을 시험할 수 있고, 멜론 등의 자동 재생은 아직 지원하지 않아.</p>
     </section>
   </div>
   <div id="installHelpOverlay" class="modal-backdrop hidden" role="presentation">
@@ -919,9 +921,10 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/catalog-filters.js?v=6.9.8" defer></script>
-  <script src="/home.js?v=6.9.8" defer></script>
-  <script src="/room-bubbles.js?v=6.9.8" defer></script>
-  <script src="/app.js?v=6.9.8" defer></script>
+  <script src="/catalog-filters.js?v=6.9.9" defer></script>
+  <script src="/home.js?v=6.9.9" defer></script>
+  <script src="/room-bubbles.js?v=6.9.9" defer></script>
+  <script src="/app.js?v=6.9.9" defer></script>
+  <script src="/native-streaming.js?v=6.9.9" defer></script>
 </body>
 </html>

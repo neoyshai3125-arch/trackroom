@@ -1,0 +1,23 @@
+/* TRACKROOM v6.9.9 — app-only streaming service control. */
+.trackroom-stream-box { margin: 13px 0 12px; padding: 13px; border: 1px solid #e2d5ed;
+  border-radius: 18px; background: #f6f0fa; color:#2d1b40; font-family:inherit; text-align:left; }
+.trackroom-stream-label {display:block; font-weight:800; font-size:13px; margin:0 0 9px; }
+.trackroom-stream-row {display:flex; align-items:stretch; gap:7px;}
+.trackroom-stream-select {flex:1;min-width:0;min-height:42px; font-size:13px; color:#331747;
+  background:white; border:1px solid #c7b3d7;border-radius:12px; padding:8px 10px;}
+.trackroom-stream-play {min-height:42px;border:0;border-radius:12px;padding:8px 14px;
+  font-size:13px;font-weight:800;color:#fff;background:#712b9e;white-space:nowrap;}
+.trackroom-stream-hint {display:block; margin-top:7px; color:#715e7d; font-size:11px; line-height:1.4;}
+.room-playback-overlay .trackroom-stream-box {width:min(100%,350px);margin:14px auto 2px;}
+@media(max-width:380px){.trackroom-stream-row{flex-direction:column}.trackroom-stream-play{width:100%}}
+
+/* Android shell: keep controls reachable on compact phone screens. */
+html.trackroom-android body.room-active .room-playback-overlay[open] {
+  overflow-y:auto; padding-top:calc(10px + env(safe-area-inset-top,0px));
+  padding-bottom:calc(104px + env(safe-area-inset-bottom,0px));
+}
+html.trackroom-android body.room-active .room-playback-feature {
+  max-height:calc(100dvh - 160px); overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:none; padding:4px 0;
+}
+html.trackroom-android body.room-active .room-playback-feature::-webkit-scrollbar{display:none}
