@@ -23,7 +23,7 @@ class TestRoomPlayerV693(TestCase):
         self.assertIn('id="roomPlaybackDial"',markup)
         self.assertIn('id="roomPlaybackHandle"',markup)
         self.assertIn('aria-label="다음 곡 셔플"', markup)
-        self.assertIn('v6.9.6</span>',markup)
+        self.assertIn('v6.9.7</span>',markup)
 
     def test_app_reuses_same_player_not_duplicate_audio(self):
         script=(ROOT/'public/app.js').read_text()
@@ -43,4 +43,4 @@ class TestRoomPlayerV693(TestCase):
         self.assertIn('.room-playback-overlay[open] > .room-preview-bar',css)
         self.assertIn('background: transparent;',css)
         sw=(ROOT/'public/sw.js').read_text()
-        self.assertIn('trackroom-shell-v6.9.6',sw)
+        self.assertIn('trackroom-shell-v6.9.7',sw)

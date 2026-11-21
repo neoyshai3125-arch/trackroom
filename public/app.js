@@ -767,16 +767,19 @@ function clearSelected() {
   $('selectedTrack').innerHTML = '';
   $('selectedTrack').classList.add('hidden');
   $('songFormExtra').classList.add('hidden');
+  $('selectedSongLinks').innerHTML = '';
   $('submitSong').disabled = true;
+  $('catalogResults').querySelectorAll('.catalog-result.is-selected').forEach(row => row.classList.remove('is-selected'));
 }
 function renderSelected(track) {
-  const art = track.artworkUrl ? `<img src="${escaped(track.artworkUrl)}" alt="앨범 커버" />` : '<span class="no-art">♫</span>';
-  $('selectedTrack').innerHTML = `<div class="chosen-cover">${art}</div><div class="chosen-info"><small>✓ 선택된 음원 · ${escaped(catalogLabel(track.sourceCatalog))}</small><strong>${escaped(track.title)}</strong><span>${escaped(track.artist)}</span><a href="${escaped(track.musicUrl)}" target="_blank" rel="noopener noreferrer">원본 음원 확인 ↗</a>${track.artworkStoreUrl ? `<a href="${escaped(track.artworkStoreUrl)}" target="_blank" rel="noopener noreferrer">iTunes Store에서 보기 ↗</a>` : ''}</div><button class="chosen-clear" type="button" id="clearTrack" aria-label="선택 취소">✕</button>`;
+  $('selectedTrack').innerHTML = `<span class="chosen-count">선택한 곡 1곡</span><span class="chosen-summary"><strong>${escaped(track.title)}</strong><span class="chosen-dot" aria-hidden="true">·</span><span>${escaped(track.artist)}</span></span><button class="chosen-clear" type="button" id="clearTrack" aria-label="선택 취소">×</button>`;
+  const originalLink = track.musicUrl ? `<a href="${escaped(track.musicUrl)}" target="_blank" rel="noopener noreferrer">원본 음원 확인 ↗</a>` : '';
+  const storeLink = track.artworkStoreUrl ? `<a href="${escaped(track.artworkStoreUrl)}" target="_blank" rel="noopener noreferrer">iTunes Store에서 보기 ↗</a>` : '';
+  $('selectedSongLinks').innerHTML = originalLink + storeLink;
   $('selectedTrack').classList.remove('hidden');
   $('songFormExtra').classList.remove('hidden');
   $('submitSong').disabled = false;
   $('clearTrack').addEventListener('click', clearSelected);
-  $('selectedTrack').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 // Fill missing covers one song at a time so every search result gets a fair
 // lookup, without a blocking request or an Apple API burst.
@@ -807,8 +810,6 @@ async function resolveSearchCovers(seq) {
         }
         if (selectedTrack?.sourceId === original.sourceId && selectedTrack?.sourcePlatform === 'lastfm') {
           selectedTrack = updated;
-          const cover = $('selectedTrack').querySelector('.chosen-cover');
-          if (cover) cover.innerHTML = `<img src="${escaped(updated.artworkUrl)}" alt="앨범 커버" onerror="this.parentElement.textContent='♫'" />`;
         }
       }
       if (seq === searchCounter) $('searchStatus').textContent =
@@ -917,7 +918,8 @@ function renderCatalogResults() {
       ? `<span class="catalog-art dash-row-art">${art}</span>`
       : `<button class="catalog-art catalog-art-button dash-row-art" type="button" data-index="${i}" data-catalog-action="album" title="앨범 전체 보기" aria-label="${artLabel}">${art}<span class="album-art-hint" aria-hidden="true">↗</span></button>`;
     const action = isAlbum ? 'album' : 'select';
-    return `<div class="catalog-result dash-row" data-track-index="${i}" role="listitem">${cover}<button type="button" class="catalog-result-main dash-row-open" data-index="${i}" data-catalog-action="${action}" aria-label="${label} ${isAlbum ? '앨범 열기' : '추천곡 선택'}">${details}<span class="catalog-choose dash-row-chevron" aria-hidden="true">›</span></button></div>`;
+    const isChosen = !isAlbum && !!selectedTrack?.selectionToken && selectedTrack.selectionToken === song.selectionToken;
+    return `<div class="catalog-result dash-row${isChosen ? ' is-selected' : ''}" data-track-index="${i}" role="listitem">${cover}<button type="button" class="catalog-result-main dash-row-open" data-index="${i}" data-catalog-action="${action}" aria-label="${label} ${isAlbum ? '앨범 열기' : '추천곡 선택'}" ${isChosen ? 'aria-pressed="true"' : 'aria-pressed="false"'}>${details}<span class="catalog-choose ${isAlbum ? 'dash-row-chevron' : 'room-result-pick'}" aria-hidden="true">${isAlbum ? '›' : '+'}</span></button></div>`;
   }).join('');
 }
 function clearAlbumNavigation() {
@@ -1060,8 +1062,8 @@ async function searchSongs(event) {
     catalogResults = data.results || [];
     catalogView = kind === 'artist' ? 'artist-profiles' : 'search';
     $('searchStatus').textContent = catalogResults.length
-      ? `${catalogResults.length}${kind === 'artist' ? '개 아티스트 프로필 발견 · 프로필을 누르면 해당 아티스트의 곡을 볼 수 있어.' : kind === 'album' ? '개 앨범 발견 · 앨범을 누르면 수록곡을 볼 수 있어.' : '곡 발견 · 인기순(검색 순위 기준)·최신순(발매일 기준)으로 정렬할 수 있어.'}`
-      : '검색 결과가 없어. 다른 검색어로 다시 시도해 봐.';
+      ? `검색 결과 ${catalogResults.length}개${kind === 'artist' ? ' · 아티스트를 선택하세요' : kind === 'album' ? ' · 앨범을 선택하세요' : ''}`
+      : '검색 결과가 없어요. 다른 검색어를 입력해 보세요.';
     renderCatalogResults();
     if (kind === 'artist' && catalogResults.length) void resolveArtistPhotos(seq, q);
     if (platform === 'lastfm' && kind === 'track') void resolveSearchCovers(seq);
@@ -1088,8 +1090,12 @@ async function selectSearchResult(event) {
   }
   selectedTrack = song;
   renderSelected(song);
-  [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el =>
-    el.classList.toggle('is-selected', Number(el.dataset.trackIndex) === Number(trigger.dataset.index)));
+  [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(el => {
+    const chosen = Number(el.dataset.trackIndex) === Number(trigger.dataset.index);
+    el.classList.toggle('is-selected', chosen);
+    const action = el.querySelector('[data-catalog-action="select"]');
+    if (action) action.setAttribute('aria-pressed', String(chosen));
+  });
 }
 async function addSong(event) {
   event.preventDefault();
@@ -1199,8 +1205,12 @@ async function init() {
     renderCatalogResults();
     const selectedKey = selectedTrack?.sourceId;
     if (selectedKey) {
-      [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(b =>
-        b.classList.toggle('is-selected', catalogResults[Number(b.dataset.trackIndex)]?.sourceId === selectedKey));
+      [...$('catalogResults').querySelectorAll('.catalog-result')].forEach(b => {
+        const chosen = catalogResults[Number(b.dataset.trackIndex)]?.sourceId === selectedKey;
+        b.classList.toggle('is-selected', chosen);
+        const action = b.querySelector('[data-catalog-action="select"]');
+        if (action) action.setAttribute('aria-pressed', String(chosen));
+      });
     }
   });
   $('catalogResults').addEventListener('click', selectSearchResult);
@@ -1210,7 +1220,25 @@ async function init() {
     const album = catalogViewInfo?.albums?.[Number(trigger.dataset.albumIndex)];
     if (album?.selectionToken) await openAlbumFromResult(album, trigger);
   });
-  $('catalogSearchMode').addEventListener('change', () => { ++searchCounter; clearSelected(); clearAlbumNavigation(); catalogResults=[]; $('catalogResults').innerHTML=''; $('searchStatus').textContent='검색 기준을 변경했어. 다시 검색해 줘.'; });
+  const syncSearchTabs = () => {
+    const selectedMode = $('catalogSearchMode').value;
+    $('catalogSearchForm').querySelectorAll('[data-catalog-mode]').forEach(tab => {
+      const active = tab.dataset.catalogMode === selectedMode;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+  };
+  $('catalogSearchForm').querySelectorAll('[data-catalog-mode]').forEach(tab => tab.addEventListener('click', () => {
+    if ($('catalogSearchMode').value === tab.dataset.catalogMode) return;
+    $('catalogSearchMode').value = tab.dataset.catalogMode;
+    $('catalogSearchMode').dispatchEvent(new Event('change', {bubbles:true}));
+  }));
+  $('catalogSearchMode').addEventListener('change', () => {
+    syncSearchTabs();
+    ++searchCounter; clearSelected(); clearAlbumNavigation(); catalogResults=[]; $('catalogResults').innerHTML='';
+    $('searchStatus').textContent='검색 기준을 변경했어요. 다시 검색해 주세요.';
+  });
+  syncSearchTabs();
   $('songQuery').addEventListener('input', () => {
     ++searchCounter;
     clearSelected(); clearAlbumNavigation(); catalogResults = []; $('catalogResults').innerHTML = '';

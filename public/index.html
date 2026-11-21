@@ -11,11 +11,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRACKROOM" />
-  <link rel="stylesheet" href="/style.css?v=6.9.6" />
-  <link rel="stylesheet" href="/home.css?v=6.9.6" />
-  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.6" />
-  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.6" />
-  <link rel="stylesheet" href="/room-search-home.css?v=6.9.6" />
+  <link rel="stylesheet" href="/style.css?v=6.9.7" />
+  <link rel="stylesheet" href="/home.css?v=6.9.7" />
+  <link rel="stylesheet" href="/room-bubbles.css?v=6.9.7" />
+  <link rel="stylesheet" href="/catalog-filters.css?v=6.9.7" />
+  <link rel="stylesheet" href="/room-search-home.css?v=6.9.7" />
   <title>TRACKROOM — 좋아하는 음악을 함께 발견하는 공간</title>
 </head>
 <body>
@@ -172,7 +172,7 @@
           <button type="button" id="roomMenuInstallApp" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">↓</span><span><strong>TRACKROOM 앱 설치</strong><small>휴대폰 홈 화면에서 바로 실행</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
           <button type="button" id="roomMenuHome" class="room-menu-action"><span class="room-menu-icon" aria-hidden="true">⌂</span><span><strong>메인 화면으로</strong><small>방 만들기 또는 다른 방 참여</small></span><span class="menu-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.6</span></p>
+        <p class="room-menu-note">기존 추천곡과 방은 그대로 유지돼. <span class="client-build-label" aria-label="화면 버전">v6.9.7</span></p>
       </nav>
       <div class="room-layout">
         <section class="song-section" aria-label="추천 음악 탐색 공간">
@@ -195,50 +195,66 @@
           </div>
         </section>
         <button id="addPanelBackdrop" class="add-panel-backdrop hidden" type="button" aria-label="음악 등록 창 닫기"></button>
-        <aside class="add-panel" id="addPanel" aria-label="음악 등록">
-          <button id="closeAddPanel" class="add-panel-close" type="button" aria-label="음악 등록 창 닫기">✕</button>
+        <aside class="add-panel" id="addPanel" aria-label="음악 추가하기">
+          <button id="closeAddPanel" class="add-panel-close" type="button" aria-label="음악 추가 창 닫기">×</button>
           <div class="room-home-search-heading">
-            <h2>음악 탐색</h2>
-            <p>곡을 찾아 선택하면 이 방에 추천할 수 있어.</p>
+            <h2>음악 추가하기</h2>
+            <p>방에 공유할 곡을 찾아보세요</p>
           </div>
           <form id="catalogSearchForm" class="catalog-search-form room-home-search" role="search">
-            <label class="dash-sr" for="songQuery">검색어</label>
-            <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목, 아티스트, 앨범" autocomplete="off" required />
+            <div class="room-search-querybar">
+              <label class="dash-sr" for="songQuery">검색어</label>
+              <div class="room-search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+                <input id="songQuery" maxlength="80" minlength="2" placeholder="곡 제목, 아티스트, 앨범 검색" autocomplete="off" required />
+              </div>
+              <button class="room-home-search-button" type="submit">검색</button>
+            </div>
             <label class="dash-sr" for="catalogSearchMode">검색 기준</label>
-            <select id="catalogSearchMode" aria-label="검색 기준"><option value="track">곡</option><option value="artist">아티스트</option><option value="album">앨범</option></select>
-            <button class="room-home-search-button" type="submit">검색</button>
-            <div id="roomCatalogFilters" class="catalog-filter-region"></div>
-            <details class="room-search-options">
-              <summary>검색 서비스 설정</summary>
-              <label for="catalogPlatform">검색 데이터베이스</label>
-              <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
-              <p id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</p>
-              <div class="catalog-provider"><span class="catalog-provider-name">음악 검색 · Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
-            </details>
+            <select id="catalogSearchMode" class="room-search-native-mode" aria-label="검색 기준"><option value="track">곡</option><option value="artist">아티스트</option><option value="album">앨범</option></select>
+            <div class="room-search-tabs" role="group" aria-label="검색 기준">
+              <button type="button" class="room-search-tab is-active" data-catalog-mode="track" aria-pressed="true">곡</button>
+              <button type="button" class="room-search-tab" data-catalog-mode="artist" aria-pressed="false">아티스트</button>
+              <button type="button" class="room-search-tab" data-catalog-mode="album" aria-pressed="false">앨범</button>
+            </div>
           </form>
-          <div class="catalog-sort-row" id="catalogSortRow">
-            <label for="catalogResultSort">검색 결과 정렬</label>
-            <select id="catalogResultSort" aria-label="검색 결과 정렬">
-              <option value="popular">인기순 · 검색 순위 기준</option>
-              <option value="recent">최신순 · 발매일 기준</option>
-            </select>
+          <div class="room-result-topline">
+            <div id="searchStatus" class="search-status" aria-live="polite">곡을 검색해 방에 추가해 보세요.</div>
+            <div class="catalog-sort-row" id="catalogSortRow">
+              <label class="dash-sr" for="catalogResultSort">검색 결과 정렬</label>
+              <select id="catalogResultSort" aria-label="검색 결과 정렬"><option value="popular">인기순</option><option value="recent">최신순</option></select>
+            </div>
           </div>
-          <div id="searchStatus" class="search-status" aria-live="polite">최대 50개 검색 결과에서 곡을 선택할 수 있어.</div>
-          <button type="button" id="albumBack" class="btn btn-outline album-back hidden">← 검색 결과로 돌아가기</button>
+          <button type="button" id="albumBack" class="btn btn-outline album-back hidden">← 이전 검색 결과로 돌아가기</button>
           <div id="catalogAlbumHeader" class="catalog-album-header hidden" aria-label="선택한 앨범 또는 아티스트 정보"></div>
           <section id="catalogArtistAlbums" class="catalog-artist-albums hidden" aria-label="아티스트 참여 앨범"></section>
           <div id="catalogResults" class="catalog-results" role="list" aria-label="검색된 음원 또는 아티스트"></div>
-          <form id="addSongForm">
+          <details class="room-search-options">
+            <summary><span class="room-settings-gear" aria-hidden="true">⚙</span><span>검색 서비스 설정</span><span class="room-setting-chevron" aria-hidden="true">›</span></summary>
+            <div class="room-search-options-body">
+              <label for="catalogPlatform">검색 데이터베이스</label>
+              <select id="catalogPlatform" class="platform-select"><option value="apple" selected>Apple / iTunes 공개 카탈로그 (기본)</option><option value="lastfm">Last.fm (보조)</option></select>
+              <div id="roomCatalogFilters" class="catalog-filter-region"></div>
+              <p id="catalogHint" class="catalog-hint" role="status">Apple/iTunes에서 곡·아티스트·앨범을 검색해. 국내 Apple Music과 검색 결과가 다를 수 있어.</p>
+              <div class="catalog-provider"><span class="catalog-provider-name">음악 검색 · Apple/iTunes</span><a id="catalogSourceLink" href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music ↗</a></div>
+            </div>
+          </details>
+          <form id="addSongForm" class="room-add-footer">
             <div id="selectedTrack" class="selected-track hidden"></div>
             <div id="songFormExtra" class="hidden">
-            <label class="field-label" for="note">추천 한마디 <span class="optional">선택</span></label>
-            <textarea id="note" maxlength="500" rows="3" placeholder="이 곡을 추천하는 이유, 듣기 좋은 순간..."></textarea>
-            <div class="favorite-title">좋아하는 구간 <span class="optional">선택 · 재생 연동은 추후 지원</span></div>
-            <div class="time-fields"><div><label class="field-label" for="startTime">시작</label><input id="startTime" placeholder="1:20" inputmode="text" /></div><span class="range-dash">—</span><div><label class="field-label" for="endTime">끝</label><input id="endTime" placeholder="1:50" inputmode="text" /></div></div>
-            <button id="submitSong" class="btn btn-primary btn-wide add-submit" type="submit" disabled>+ 선택한 곡 등록하기</button>
+              <details class="room-song-extras">
+                <summary>추천 한마디 · 좋아하는 구간 <span>선택 사항</span></summary>
+                <div class="room-song-extras-body">
+                  <label class="field-label" for="note">추천 한마디 <span class="optional">선택</span></label>
+                  <textarea id="note" maxlength="500" rows="3" placeholder="이 곡을 추천하는 이유, 듣기 좋은 순간..."></textarea>
+                  <div class="favorite-title">좋아하는 구간 <span class="optional">선택 · 재생 연동은 추후 지원</span></div>
+                  <div class="time-fields"><div><label class="field-label" for="startTime">시작</label><input id="startTime" placeholder="1:20" inputmode="text" /></div><span class="range-dash">—</span><div><label class="field-label" for="endTime">끝</label><input id="endTime" placeholder="1:50" inputmode="text" /></div></div>
+                  <div id="selectedSongLinks" class="room-selected-links"></div>
+                </div>
+              </details>
+              <button id="submitSong" class="btn btn-primary btn-wide add-submit" type="submit" disabled><span aria-hidden="true">＋</span> 선택한 곡 추가하기</button>
             </div>
           </form>
-          <div class="panel-foot">NO AUDIO UPLOADS. JUST GOOD TASTE. ☺</div>
         </aside>
       </div>
       <section id="roomPreviewBar" class="room-preview-bar hidden" aria-label="추천방 미리듣기">
@@ -339,9 +355,9 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/catalog-filters.js?v=6.9.6" defer></script>
-  <script src="/home.js?v=6.9.6" defer></script>
-  <script src="/room-bubbles.js?v=6.9.6" defer></script>
-  <script src="/app.js?v=6.9.6" defer></script>
+  <script src="/catalog-filters.js?v=6.9.7" defer></script>
+  <script src="/home.js?v=6.9.7" defer></script>
+  <script src="/room-bubbles.js?v=6.9.7" defer></script>
+  <script src="/app.js?v=6.9.7" defer></script>
 </body>
 </html>
