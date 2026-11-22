@@ -8,14 +8,14 @@ def test_android_ui_assets_are_linked():
     html = (ROOT/'public/index.html').read_text()
     js = (ROOT/'public/app.js').read_text()
     sw = (ROOT/'public/sw.js').read_text()
-    assert 'native-streaming.css?v=6.9.9' in html
-    assert 'native-streaming.js?v=6.9.9' in html
+    assert 'native-streaming.css?v=6.10.0' in html
+    assert 'native-streaming.js?v=6.10.0' in html
     assert 'id="roomStreamControls"' in html
     assert 'TrackroomStreaming.controls(song)' in js
     assert 'TrackroomRoomStreamActiveSong' in js
     assert 'roomStreamControls' in js
-    assert 'trackroom-shell-v6.9.9' in sw
-    assert 'native-streaming.js?v=6.9.9' in sw
+    assert 'trackroom-shell-v6.10.0' in sw
+    assert 'native-streaming.js?v=6.10.0' in sw
 
 
 def test_safety_and_no_unsupported_autoplay():

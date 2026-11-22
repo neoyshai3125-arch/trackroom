@@ -21,3 +21,24 @@ html.trackroom-android body.room-active .room-playback-feature {
   scrollbar-width:none; padding:4px 0;
 }
 html.trackroom-android body.room-active .room-playback-feature::-webkit-scrollbar{display:none}
+/* v6.10.0: read-only external playback metadata with explicit user controls. */
+.trackroom-media-panel{margin:12px 0 6px;padding:12px;background:rgba(255,255,255,.8);border:1px solid #e8ddee;border-radius:14px;color:#34213d}
+.trackroom-media-head,.trackroom-media-time{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.trackroom-media-head b{font-size:12px;line-height:1.3}
+.trackroom-media-chip{font-size:10px;white-space:nowrap;padding:3px 8px;border-radius:30px;background:#efebf1;color:#665473}
+.trackroom-media-chip[data-status="connected"]{background:#e5f5ea;color:#196b40}
+.trackroom-media-chip[data-status="permission"]{background:#fff1e4;color:#8c4c15}
+.trackroom-media-now{display:flex;flex-direction:column;gap:3px;margin:11px 0 6px}
+.trackroom-media-track{font-size:13px;overflow-wrap:anywhere}
+.trackroom-media-artist,.trackroom-media-desc,.trackroom-media-support{font-size:11px;line-height:1.45;color:#74677b}
+.trackroom-media-permission,.trackroom-media-refresh,.trackroom-media-search{display:block;border:1px solid #baa2cd;border-radius:9px;padding:9px 10px;background:#f1e8f8;color:#512678;font:inherit;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-top:9px}
+.trackroom-media-refresh{background:transparent;color:#665476}
+.trackroom-media-player{padding-top:7px}
+.trackroom-media-seek{width:100%;accent-color:#7437a0;touch-action:pan-y}
+.trackroom-media-time{font:11px ui-monospace,monospace;color:#796b80;margin:2px 0 8px}
+.trackroom-media-buttons{display:flex;justify-content:center;gap:10px;align-items:center;margin:8px 0}
+.trackroom-media-buttons button{background:#f2eaf7;color:#66338c;border:1px solid #dac5e9;min-width:46px;min-height:40px;border-radius:12px;font-size:15px;cursor:pointer}
+.trackroom-media-buttons button:disabled,.trackroom-media-search:disabled{opacity:.35;cursor:not-allowed}
+.trackroom-media-search{margin-bottom:7px}
+.trackroom-media-player[hidden],.trackroom-media-permission[hidden],.trackroom-media-refresh[hidden],.trackroom-media-search[hidden],.trackroom-media-buttons button[hidden]{display:none !important}
+@media(max-width:390px){.trackroom-media-panel{padding:10px}.trackroom-media-buttons{gap:7px}.trackroom-media-buttons button{min-width:40px}}

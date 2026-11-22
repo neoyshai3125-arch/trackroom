@@ -16,6 +16,7 @@ let roomSearchFilters;
 const roomPreviewHistory = [];
 const roomPreviewSeen = new Set();
 let roomPlaybackScrub = null; // draft position while dragging the whole record
+let externalMediaMode = false; // UI follows real Android MediaSession after the user selects external playback
 let addPanelOpen = false;
 let roomMenuOpen = false;
 
@@ -38,6 +39,7 @@ async function api(path, options = {}) {
   return data;
 }
 window.TrackroomNativeStatus = (message, error = false) => toast(message, error);
+window.TrackroomPauseLocalPreview = () => dashboard.pausePreview();
 window.TrackroomRoomStreamSelectedId = () => bubbleSelectedId;
 window.TrackroomRoomStreamSongById = id => state.songs.find(song => song.id === id);
 window.TrackroomRoomStreamActiveSong = () => activeRoomPreview();
@@ -379,9 +381,37 @@ function restoreRoomPreviewBar() {
   if (bar.parentElement === overlay) overlay.parentElement.insertBefore(bar, overlay);
 }
 
+// In external mode the EXISTING circular player displays the real Android app state.
+// Never claim a room recommendation is playing if the external app reports a different track.
+function roomPlaybackSource(preview = dashboard.getPreview()) {
+  if (!externalMediaMode) return preview;
+  const native = window.TrackroomStreaming?.state?.();
+  if (!native?.connected || native.provider !== window.TrackroomStreaming?.preferred?.()) {
+    return {...preview, duration:0, position:0, playing:false, loading:false,
+      status:'스트리밍 앱 연결 대기', cover:null};
+  }
+  const track = activeRoomPreview(preview);
+  const norm = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,'').trim();
+  const exact = track && norm(native.title) === norm(track.title) && norm(native.artist) === norm(track.artist);
+  return {
+    ...preview, duration:Math.max(0,Number(native.durationMs)||0)/1000,
+    position:Math.max(0,Number(native.positionMs)||0)/1000,
+    playing:native.state === 'playing', loading:native.state === 'buffering',
+    status:`${native.providerName || '외부 앱'} · ${native.state === 'playing'?'재생 중':native.state === 'paused'?'일시정지':'연결됨'}`,
+    cover:exact ? preview.cover : null,
+    externalTitle:native.title || '곡 제목 확인 불가', externalArtist:native.artist || ''
+  };
+}
+function sendRoomExternal(action, seconds = 0) {
+  const native = window.TrackroomStreaming?.state?.();
+  if (!native?.connected) return toast('음악 앱의 재생 세션이 아직 연결되지 않았어.',true);
+  window.TrackroomStreaming.send(action, {provider:native.provider,
+    ...(action === 'seek' ? {toMs:String(Math.max(0,Math.round(seconds*1000)))} : {})});
+}
+
 // Same clockwise time-to-angle conversion as Home's circular DJ dial.
 // Preview time is committed to the EXISTING audio element on pointer release.
-function renderRoomPlaybackDial(preview = dashboard.getPreview()) {
+function renderRoomPlaybackDial(preview = roomPlaybackSource()) {
   const dial = $('roomPlaybackDial');
   const duration = Math.max(0, Number(preview.duration) || 0);
   const position = Math.max(0, Math.min(duration,
@@ -417,7 +447,7 @@ function shortestPlaybackTurn(current, last) {
 function initRoomPlaybackDial() {
   const dial = $('roomPlaybackDial');
   const cover = $('roomPlaybackCover').parentElement;
-  const previewDuration = () => Math.max(0, Number(dashboard.getPreview().duration) || 0);
+  const previewDuration = () => Math.max(0, Number(roomPlaybackSource().duration) || 0);
   dial.addEventListener('pointerdown', event => {
     const duration = previewDuration();
     if (event.button !== 0 || !duration || roomPlaybackScrub || !$('roomPlaybackOverlay').open) return;
@@ -426,7 +456,7 @@ function initRoomPlaybackDial() {
     event.preventDefault();
     roomPlaybackScrub = {
       id: event.pointerId, angle, moved: false,
-      position: Math.min(duration, Math.max(0, Number(dashboard.getPreview().position) || 0))
+      position: Math.min(duration, Math.max(0, Number(roomPlaybackSource().position) || 0))
     };
     dial.setPointerCapture(event.pointerId);
     dial.classList.add('scrubbing');
@@ -456,7 +486,10 @@ function initRoomPlaybackDial() {
     roomPlaybackScrub = null;
     dial.classList.remove('scrubbing');
     cover.classList.remove('scrubbing');
-    if (commit) dashboard.seekPreview(position);
+    if (commit) {
+      if (externalMediaMode) sendRoomExternal('seek',position);
+      else dashboard.seekPreview(position);
+    }
     renderRoomPlaybackDial();
     if (dial.hasPointerCapture(event.pointerId)) dial.releasePointerCapture(event.pointerId);
   };
@@ -467,9 +500,11 @@ function initRoomPlaybackDial() {
     const duration = previewDuration();
     if (!duration || !(event.key in offsets || event.key === 'Home' || event.key === 'End')) return;
     event.preventDefault();
-    const now = Number(dashboard.getPreview().position) || 0;
+    const now = Number(roomPlaybackSource().position) || 0;
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? duration : now + offsets[event.key];
-    dashboard.seekPreview(Math.max(0, Math.min(duration - .05, next)));
+    const seekTo = Math.max(0, Math.min(duration - .05, next));
+    if (externalMediaMode) sendRoomExternal('seek',seekTo);
+    else dashboard.seekPreview(seekTo);
     renderRoomPlaybackDial();
   });
 }
@@ -506,6 +541,7 @@ function openRoomPlayback() {
 
 function syncRoomPreview(preview = dashboard.getPreview()) {
   const song = activeRoomPreview(preview);
+  const display = roomPlaybackSource(preview);
   const active = Boolean(song);
   const overlay = $('roomPlaybackOverlay');
   $('roomPreviewBar').classList.toggle('hidden', !active);
@@ -513,24 +549,24 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   document.body.classList.toggle('room-has-active-preview', active);
   const previous = active && roomPreviewHistory.some(id => state.songs.some(item => item.id === id && id !== song.id));
   const next = active && state.songs.length > 1;
-  roomBubbles?.setPreview(active ? {id: song.id, playing: preview.playing, loading: preview.loading, previous, next} : null);
+  roomBubbles?.setPreview(active ? {id: song.id, playing: display.playing, loading: display.loading, previous, next} : null);
   if (!active) {
     if (overlay.open) overlay.close();
     return;
   }
 
-  updateRoomPreviewCover($('roomPreviewCover'), preview.cover, 180);
-  $('roomPreviewTitle').textContent = song.title;
-  $('roomPreviewArtist').textContent = song.artist;
-  if ($('roomPreviewStatus').textContent !== preview.status) $('roomPreviewStatus').textContent = preview.status;
+  updateRoomPreviewCover($('roomPreviewCover'), display.cover, 180);
+  $('roomPreviewTitle').textContent = display.externalTitle || song.title;
+  $('roomPreviewArtist').textContent = display.externalArtist ?? song.artist;
+  if ($('roomPreviewStatus').textContent !== display.status) $('roomPreviewStatus').textContent = display.status;
   const store = $('roomPreviewStore');
   store.classList.toggle('hidden', !preview.store);
   if (preview.store) {
     store.href = preview.store;
     store.textContent = new URL(preview.store).hostname === 'itunes.apple.com' ? 'iTunes Store ↗' : 'Apple Music ↗';
   } else store.removeAttribute('href');
-  const playLabel = preview.loading ? '미리듣기 준비 취소' : preview.playing ? '일시정지' : '미리듣기 재생';
-  const playPath = preview.playing || preview.loading ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z';
+  const playLabel = externalMediaMode ? (display.playing ? '음악 앱 일시정지' : '음악 앱 재생') : display.loading ? '미리듣기 준비 취소' : display.playing ? '일시정지' : '미리듣기 재생';
+  const playPath = display.playing || display.loading ? 'M7 4h4v16H7zm7 0h4v16h-4z' : 'M7 4l14 8L7 20z';
   $('roomPreviewPlay').setAttribute('aria-label', playLabel);
   $('roomPreviewPlayIcon').setAttribute('d', playPath);
   $('roomPreviewPrevious').disabled = !previous;
@@ -538,31 +574,32 @@ function syncRoomPreview(preview = dashboard.getPreview()) {
   $('roomPlaybackPrevious').disabled = !previous;
   $('roomPlaybackNext').disabled = !next;
   const seek = $('roomPreviewSeek');
-  seek.disabled = !preview.duration;
+  seek.disabled = !display.duration || (externalMediaMode && !window.TrackroomStreaming?.state?.()?.canSeek);
   if (document.activeElement !== seek || !seek.matches(':active')) {
-    seek.max = String(preview.duration || 1);
-    seek.value = String(preview.duration ? preview.position : 0);
+    seek.max = String(display.duration || 1);
+    seek.value = String(display.duration ? display.position : 0);
   }
-  $('roomPreviewTime').textContent = preview.duration ? `${timeLabel(preview.position)} / ${timeLabel(preview.duration)}` : '0:00 / –:––';
-  const progress = preview.duration ? Math.min(100, preview.position / preview.duration * 100) : 0;
+  $('roomPreviewTime').textContent = display.duration ? `${timeLabel(display.position)} / ${timeLabel(display.duration)}` : '0:00 / –:––';
+  const progress = display.duration ? Math.min(100, display.position / display.duration * 100) : 0;
   $('bubbleStage').style.setProperty('--room-preview-progress', String(progress));
 
   const playbackTitle = $('roomPlaybackTitle');
-  if (playbackTitle.textContent !== song.title) playbackTitle.textContent = song.title;
+  if (playbackTitle.textContent !== (display.externalTitle || song.title)) playbackTitle.textContent = display.externalTitle || song.title;
   if (!overlay.open) return;
-  updateRoomPreviewCover($('roomPlaybackCover'), preview.cover, 600);
+  updateRoomPreviewCover($('roomPlaybackCover'), display.cover, 600);
   overlay.style.setProperty('--room-playback-art', artColor(song.title));
-  renderRoomPlaybackDial(preview);
-  $('roomPlaybackArtist').textContent = song.artist;
+  renderRoomPlaybackDial(display);
+  $('roomPlaybackArtist').textContent = display.externalArtist ?? song.artist;
   $('roomPlaybackToggle').setAttribute('aria-label', playLabel);
   $('roomPlaybackIcon').setAttribute('d', playPath);
   const status = $('roomPlaybackStatus');
-  const message = preview.status === 'Apple 미리듣기' ? '' : preview.status;
+  const message = display.status === 'Apple 미리듣기' ? '' : display.status;
   if (status.textContent !== message) status.textContent = message;
   status.classList.toggle('hidden', !message);
 }
 
 function startRoomPreview(song, keepHistory = true) {
+  externalMediaMode = false; // selecting another room song explicitly returns to local preview
   const current = activeRoomPreview();
   if (keepHistory && current && current.id !== song.id) {
     roomPreviewHistory.push(current.id);
@@ -576,6 +613,10 @@ function startRoomPreview(song, keepHistory = true) {
 function roomPreviewAction(action) {
   const current = activeRoomPreview();
   if (!current) return;
+  if (externalMediaMode) {
+    if (action === 'toggle') return sendRoomExternal(roomPlaybackSource().playing ? 'pause' : 'play');
+    return sendRoomExternal(action);
+  }
   if (action === 'toggle') {
     dashboard.togglePreview();
     return;
@@ -650,7 +691,14 @@ function initBubbleCanvas() {
     onControl: roomPreviewAction,
     onZoom: zoom => { $('bubbleZoomLabel').textContent = `${Math.round(zoom * 100)}%`; }
   });
-  window.addEventListener('trackroom:external-stream', () => dashboard.pausePreview());
+  window.addEventListener('trackroom:external-stream', () => {
+    externalMediaMode = true;
+    dashboard.pausePreview();
+    syncRoomPreview();
+  });
+  window.addEventListener('trackroom:media-session', () => {
+    if (externalMediaMode) syncRoomPreview();
+  });
   dashboard.watchPreview(syncRoomPreview);
   $('roomPreviewPlay').addEventListener('click', () => roomPreviewAction('toggle'));
   $('roomPreviewPrevious').addEventListener('click', () => roomPreviewAction('previous'));
@@ -677,7 +725,12 @@ function initBubbleCanvas() {
     playbackOverlay.close();
     if (song) openBubbleDetail(song.id);
   });
-  $('roomPreviewSeek').addEventListener('input', event => dashboard.seekPreview(Number(event.currentTarget.value)));
+  $('roomPreviewSeek').addEventListener('input', event => {
+    if (!externalMediaMode) dashboard.seekPreview(Number(event.currentTarget.value));
+  });
+  $('roomPreviewSeek').addEventListener('change', event => {
+    if (externalMediaMode) sendRoomExternal('seek',Number(event.currentTarget.value));
+  });
   for (const cover of [$('roomPreviewCover'), $('roomPlaybackCover')]) {
     cover.addEventListener('error', () => {
       if (cover.dataset.original && cover.src !== cover.dataset.original) cover.src = cover.dataset.original;

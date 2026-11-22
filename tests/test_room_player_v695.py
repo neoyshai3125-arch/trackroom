@@ -1,4 +1,4 @@
-"""v6.9.9: circular seek remains, the artwork itself never spins."""
+"""v6.10.0: circular seek remains, the artwork itself never spins."""
 from pathlib import Path
 from unittest import TestCase
 
@@ -10,7 +10,7 @@ class TestStationaryAlbumArt(TestCase):
         self.assertIn('const change = shortestPlaybackTurn(angle, current.angle);', js)
         self.assertIn('current.position + change / (2 * Math.PI) * duration', js)
         self.assertIn('renderRoomPlaybackDial();', js)
-        self.assertIn('if (commit) dashboard.seekPreview(position);', js)
+        self.assertIn('else dashboard.seekPreview(position);', js)
         self.assertIn('dial.setPointerCapture(event.pointerId);', js)
         self.assertNotIn('roomPlaybackRotation', js)
         self.assertNotIn('room-scratch-rotation', js)
@@ -25,7 +25,7 @@ class TestStationaryAlbumArt(TestCase):
     def test_cache_and_visible_version(self):
         html = (ROOT / 'public/index.html').read_text()
         sw = (ROOT / 'public/sw.js').read_text()
-        self.assertIn('v6.9.9</span>', html)
-        self.assertIn('/app.js?v=6.9.9', html)
-        self.assertIn('trackroom-shell-v6.9.9', sw)
-        self.assertIn('/room-bubbles.css?v=6.9.9', sw)
+        self.assertIn('v6.10.0</span>', html)
+        self.assertIn('/app.js?v=6.10.0', html)
+        self.assertIn('trackroom-shell-v6.10.0', sw)
+        self.assertIn('/room-bubbles.css?v=6.10.0', sw)

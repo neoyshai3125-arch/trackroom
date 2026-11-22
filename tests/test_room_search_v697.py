@@ -38,5 +38,5 @@ class TestRoomSearchMatchesHome(TestCase):
         self.assertIn('#addPanel .catalog-result.dash-row',css)
         self.assertIn('background:var(--room-panel-purple)',css)
         sw=(ROOT/'public/sw.js').read_text()
-        self.assertIn("trackroom-shell-v6.9.9",sw)
+        self.assertIn("trackroom-shell-v6.10.0",sw)
         self.assertNotIn('/room-search-home.css?v=',sw)

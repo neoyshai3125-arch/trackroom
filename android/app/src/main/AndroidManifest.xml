@@ -17,6 +17,16 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Trackroom"
         android:label="@string/app_name">
+        <!-- Enabled by the user from Android Settings; no notification text is inspected. -->
+        <service
+            android:name=".TrackroomNotificationListener"
+            android:label="TRACKROOM 음악 재생 상태 연결"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

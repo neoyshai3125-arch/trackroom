@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
@@ -27,11 +28,13 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("trackroom_android", MODE_PRIVATE) }
     private lateinit var webView: WebView
     private lateinit var spotify: SpotifyConnector
+    private lateinit var mediaSessions: ExternalMediaSessions
     private var trustedOrigin = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         spotify = SpotifyConnector(this, prefs) { ok, message -> notifySite(ok, message) }
+        mediaSessions = ExternalMediaSessions(this) { snapshot -> sendMediaSnapshot(snapshot) }
         val url = prefs.getString("trackroom_url", "").orEmpty()
         if (url.isEmpty()) showSiteSetup() else openSite(url)
     }
@@ -89,15 +92,21 @@ class MainActivity : Activity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val target = request?.url ?: return true
-                if (target.scheme == "trackroom-native" && target.host == "play") {
+                if (target.scheme == "trackroom-native" && target.host in listOf("play", "media")) {
+                    // Only an explicit top-level navigation from our configured HTTPS origin.
                     if (request.isForMainFrame && isTrustedOrigin(view?.url)) {
-                        nativePlayback(target)
+                        if (target.host == "play") nativePlayback(target)
+                        else nativeMediaCommand(target)
                     }
                     return true
                 }
                 if (target.scheme == "https" && isTrustedOrigin(target.toString())) return false
                 if (request.isForMainFrame) openExternal(target)
                 return true
+            }
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                if (isTrustedOrigin(url)) mediaSessions.refreshSessions()
             }
         }
         setContentView(FrameLayout(this).apply { addView(webView,
@@ -119,8 +128,61 @@ class MainActivity : Activity() {
         val musicUrl = uri.getQueryParameter("musicUrl")?.take(900).orEmpty()
         if (title.isBlank() || artist.isBlank()) return notifySite(false, "곡 정보가 부족해.")
         val track = StreamTrack(title, artist, musicUrl)
-        if (provider == "spotify") spotify.play(track)
-        else launchSupportedService(provider, track)
+        mediaSessions.selectProvider(provider)
+        if (provider == "spotify") {
+            spotify.play(track)
+        } else {
+            // May be rejected or ignored by the external app. Never claim playback succeeded.
+            val supportsSearch = mediaSessions.hasAccess() &&
+                mediaSessions.snapshot().optBoolean("connected") &&
+                mediaSessions.snapshot().optBoolean("canPlayFromSearch")
+            if (supportsSearch) {
+                mediaSessions.command("playFromSearch", searchQuery = "$title $artist").let { notifySite(it.sent, it.message) }
+            } else launchSupportedService(provider, track)
+        }
+    }
+
+    private fun nativeMediaCommand(uri: Uri) {
+        val action = uri.getQueryParameter("action").orEmpty()
+        val requested = uri.getQueryParameter("provider").orEmpty()
+        if (requested in ExternalMediaSessions.PACKAGES) mediaSessions.selectProvider(requested)
+        when (action) {
+            "permission" -> requestNotificationAccess()
+            "sync", "select" -> mediaSessions.refreshSessions()
+            "play", "pause", "next", "previous", "seek", "playFromSearch" -> {
+                val toMs = uri.getQueryParameter("toMs")?.toLongOrNull() ?: 0L
+                val title = uri.getQueryParameter("title")?.take(160).orEmpty().trim()
+                val artist = uri.getQueryParameter("artist")?.take(160).orEmpty().trim()
+                val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
+                val result = mediaSessions.command(action, toMs, query)
+                notifySite(result.sent, result.message)
+            }
+            else -> notifySite(false, "알 수 없는 재생 명령이야.")
+        }
+    }
+
+    private fun requestNotificationAccess() {
+        if (mediaSessions.hasAccess()) {
+            mediaSessions.refreshSessions()
+            return notifySite(true, "알림 접근 권한이 이미 허용되어 있어.")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("음악 재생 상태 연결")
+            .setMessage("Android의 '알림 접근' 권한이 필요해. 이 권한은 다른 앱의 알림에 접근할 수 있는 넓은 권한이지만, TRACKROOM은 지원 음악 앱의 미디어 세션(곡 제목·아티스트·재생 상태)만 사용하고 다른 알림 내용은 읽거나 저장하지 않아. TRACKROOM에만 권한을 허용할지 직접 선택해 줘.")
+            .setPositiveButton("Android 설정 열기") { _, _ ->
+                tryStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun sendMediaSnapshot(snapshot: JSONObject) {
+        runOnUiThread {
+            if (!::webView.isInitialized || !isTrustedOrigin(webView.url)) return@runOnUiThread
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('trackroom:media-session', {detail:${snapshot}}));", null
+            )
+        }
     }
 
     private fun launchSupportedService(provider: String, track: StreamTrack) {
@@ -217,7 +279,18 @@ class MainActivity : Activity() {
         if (::webView.isInitialized && webView.canGoBack()) webView.goBack()
         else super.onBackPressed()
     }
+    override fun onResume() {
+        super.onResume()
+        if (::mediaSessions.isInitialized) mediaSessions.start()
+    }
+
+    override fun onPause() {
+        if (::mediaSessions.isInitialized) mediaSessions.stop()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        if (::mediaSessions.isInitialized) mediaSessions.stop()
         if (::webView.isInitialized) webView.destroy()
         spotify.close()
         super.onDestroy()

@@ -23,8 +23,8 @@ class TestDrawerStyleReliability(unittest.TestCase):
     self.assertIn('#addPanel {',self.css)
     self.assertIn('background: linear-gradient(',self.css)
   def test_cache_version(self):
-    self.assertIn('trackroom-shell-v6.9.9',self.sw)
-    self.assertIn('v6.9.9</span>',self.html)
+    self.assertIn('trackroom-shell-v6.10.0',self.sw)
+    self.assertIn('v6.10.0</span>',self.html)
   def test_existing_controls_present(self):
     for key in ('catalogSearchForm','songQuery','catalogSearchMode','room-search-tabs','catalogResults','addSongForm','submitSong'):
       self.assertIn(key,self.html)

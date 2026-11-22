@@ -1,48 +1,41 @@
-# TRACKROOM Android 스트리밍 연동 v6.9.9 — 개발용 프로토타입
+# TRACKROOM v6.10.0 — Android MediaSession 연동 개발 버전
 
-기존 TRACKROOM 웹사이트를 WebView로 불러오고, 곡을 누르면 사용자가 선택한 음원 앱으로 연결합니다. 이 코드는 **완성 APK가 아닌 Android Studio 프로젝트 소스**이며, 실제 Spotify 개발자 인증 및 실기기 검증은 아직 진행되지 않았습니다.
+이 ZIP은 TRACKROOM v6.9.9를 기반으로 외부 안드로이드 스트리밍 앱의 재생 정보를 읽어 앱 화면에 반영하는 **개발용 소스**입니다. 완성 APK가 아니며 Android SDK/Gradle을 사용한 빌드 및 멜론 실기기 검증은 아직 실시하지 않았습니다.
 
-## 이번 버전 기능 범위
+## 구현된 기능
 
-| 서비스 | 이 버전에서 하는 일 | 자동 재생 여부 |
-| --- | --- | --- |
-| Spotify | OAuth PKCE 연결 → Spotify 카탈로그에서 곡 검색 → 사용자가 정확한 버전 선택 → Web API 재생 명령 전달 | **조건부 가능** (Premium, 인증, 활성 재생 기기, API 권한 및 정책 준수 필요) |
-| 멜론 / 지니 / FLO / 벅스 / YouTube Music | TRACKROOM에 해당 서비스의 **정확한 HTTPS 곡 주소가 이미 저장된 경우** 곡 주소 열기; 그렇지 않으면 해당 앱을 열고 검색용 곡명·가수명을 클립보드로 복사 | **아직 불가능** (서비스별 승인·공개 재생 인터페이스 미확인) |
+- `TrackroomNotificationListener`: Android 사용자가 **설정에서 직접 허용**하는 알림 접근 서비스. 알림의 제목/내용은 읽지 않으며, 다른 앱의 미디어 세션 조회 자격으로만 이용합니다.
+- `ExternalMediaSessions`: 사용자 선택 음악 앱(멜론, 지니, FLO, 벅스, YouTube Music, Spotify)의 MediaSession만 선택하여 현재 곡 제목, 아티스트, 앨범명, 재생/정지 상태, 재생 위치, 길이, 지원 명령을 전달합니다. 곡 재생 중인 정확한 위치는 재생 속도/마지막 갱신 시간을 기준으로 표시합니다.
+- TRACKROOM 웹의 음악 상세/원형 재생 화면에 '앱 재생 상태 동기화' 패널 추가. 현재 연결 상태와 음악 정보, 재생/일시정지/이전/다음/시간 이동 버튼을 표시합니다.
+- **사용자가 '음악 앱에서 재생'을 누른 경우에만** 원형 플레이어 및 하단 바가 외부 앱의 음악 정보/재생 위치를 따라갑니다. 기존 30초 미리듣기는 멈추며, 원형 드래그를 통한 재생 위치 조정도 외부 앱이 지원하는 경우에만 전송합니다. 앨범 커버는 회전하지 않습니다. 외부 곡이 현재 추천곡과 다르면 잘못된 앨범 커버를 표시하지 않습니다.
+- `playFromSearch`가 `PlaybackState.ACTION_PLAY_FROM_SEARCH`로 **광고된 경우에만** 곡+아티스트 재생을 요청합니다. 이는 곡 지정 재생을 확정하는 기능이 **아니며** 앱이 무시하거나 다른 음원을 재생할 수 있습니다. 지원하지 않으면 기존과 마찬가지로 앱/곡 페이지를 열어 직접 재생하도록 돕습니다.
+- 기존 v6.9.9 Spotify 인증 및 API 연결 코드는 유지합니다. 단, Spotify의 개발자 권한/상용화 정책을 확인해야 합니다.
 
-자동 재생을 지원하지 않는 서비스에 잘못된 임의의 곡 ID나 비공식 딥링크를 전송하지 않습니다. 기존 30초 Apple 미리듣기는 유지되며, 앱 전용 `내 스트리밍 앱으로 듣기` 버튼에서 외부 앱 연동을 선택할 수 있습니다. 기존 가입자 DB, 서버, 음악 데이터 구조는 수정하지 않습니다.
+## 설치/검증
 
-## 설정 순서
+1. 웹 코드 적용: `public`, `frontend`, `tests` 폴더를 기존 TRACKROOM GitHub 저장소 루트의 같은 위치에 덮어쓰고 새 파일도 추가합니다. `public/native-streaming.js`, `public/native-streaming.css`, `public/app.js`, `public/index.html`, `public/sw.js`를 빠짐없이 업로드합니다. README 파일은 웹사이트에 필수는 아닙니다.
+2. GitHub Commit → Render 배포 Live → 앱을 재실행. 방 메뉴에 **v6.10.0** 표시 확인.
+3. Android Studio로 `android/` 폴더를 **별도 Android 프로젝트**로 열어 Gradle Sync. 이 프로젝트는 AGP 8.9.2 / Kotlin 2.0.21 / JDK 17 / Android SDK 35 / Gradle 8.11.1 조합을 기준으로 작성했습니다. 소스 패키지에는 Gradle wrapper 실행 바이너리가 포함되어 있지 않으므로, 로컬 Gradle 또는 wrapper 생성이 필요할 수 있습니다.
+4. USB 디버깅으로 갤럭시에서 앱 실행. 첫 실행 시 TRACKROOM의 기존 **HTTPS 배포 주소**를 정확하게 입력합니다. PWA로만 설치한 앱에서는 Android 네이티브 MediaSession 기능을 이용할 수 없습니다.
+5. 방에서 추천곡을 선택한 뒤 '내 스트리밍 앱으로 듣기'에서 `멜론`을 선택합니다. '안드로이드 알림 접근 권한 연결' → Android 설정 → **TRACKROOM 음악 재생 상태 연결**을 허용합니다. 이 설정은 일반 권한 팝업이 아닌 별도 시스템 설정입니다.
+6. 멜론 앱을 열어 아무 곡이나 직접 재생하고 TRACKROOM으로 복귀합니다. 곡명/아티스트/재생 상태/현재 시간이 들어오는지 확인합니다. 직접 정지·재생·탐색 버튼을 눌러 멜론 상태가 반영되는지 확인합니다.
+7. 멜론에서 `METEOR · 창모`를 수동으로 재생하여 정보가 올바른지 확인합니다. `이 추천곡 재생 요청` 버튼은 멜론이 지원 명령을 제공할 때만 나타납니다. 표시되더라도 눌렀을 때 실제 정확한 곡이 재생되는지 확인해야 합니다.
+8. 갤럭시의 안드로이드 버전, 멜론 버전, TRACKROOM 연결 상태와 문제가 나타난 단계를 기록합니다. 특별히 알림 접근 권한이 표시되지 않으면 앱이 '제한된 설정'으로 설치된 것인지도 확인합니다.
 
-1. ZIP 압축 해제 후 `public`, `frontend`, `tests` 폴더를 기존 GitHub 저장소의 같은 경로로 업로드/덮어쓰고 Render에서 최신 배포 상태를 확인합니다. `public/native-streaming.js`, `public/native-streaming.css`도 **새로 업로드**해야 합니다.
-2. 컴퓨터의 **Android Studio**에서 압축 폴더의 `android/`를 별도 프로젝트로 엽니다. Android SDK 35와 JDK 17을 설치하고 Gradle 동기화를 합니다. 기기/에뮬레이터에 실행합니다.
-3. 앱 첫 실행 시 기존 TRACKROOM의 **실제 HTTPS 배포 주소**를 입력합니다. 주소와 로그인 상태는 이후 앱에 저장됩니다. 웹사이트 안에서 앱에만 나타나는 보라색 재생 선택 UI를 확인합니다.
-4. Spotify 재생을 시험하려면 [Spotify for Developers](https://developer.spotify.com/dashboard)에 테스트용 앱을 등록하고 Client ID를 발급받으세요. 앱 리디렉션 URI에 **`http://127.0.0.1/callback`** (포트 없는 loopback URI)를 등록합니다. 공식 문서는 loopback에서 요청 시 임의 포트를 붙일 수 있도록 허용합니다. Client Secret은 앱에 입력하거나 포함하지 않습니다.
-5. Spotify **Premium** 계정 및 개발 앱의 허용 사용자 목록을 확인합니다. 스마트폰에 Spotify 앱을 설치·로그인하고 **Spotify 앱에서 아무 곡이나 한 번 실행해 활성 재생 기기를 만든 뒤**, TRACKROOM에서 `Spotify`를 선택하여 재생을 눌러보세요.
-6. 첫 연결 시 Spotify 계정 승인 브라우저 창이 열립니다. 승인 후 `Spotify 연결이 완료됐어요` 페이지가 뜨면 TRACKROOM 앱으로 돌아오세요. Spotify 검색 결과가 뜨면 정확한 곡을 선택하여 재생 명령을 보냅니다.
+## 제약 및 개인정보 보호
 
-**참고:** Spotify Web API는 2026년 개발 모드 계정 및 사용자 제한이 있으며, Spotify의 개발자 정책은 상업적 스트리밍 통합을 제한합니다. TRACKROOM을 실제로 상용 출시하려면 Spotify 측 별도 허가/제휴와 최신 정책 검토가 선행되어야 합니다. 멜론·지니·FLO·벅스 등도 서비스 제공자가 외부 앱 재생 명령을 허용하는 공식 계약/API가 필요할 수 있습니다.
-
-## 어떻게 연결되는가
-
-- 브라우저 `public/native-streaming.js`는 `TRACKROOMAndroid/0.1` User-Agent가 있는 경우에만 곡별 서비스 선택 UI를 표시합니다.
-- 사용자가 `앱에서 듣기`를 누르면 top-frame에서 `trackroom-native://play?title=...&artist=...&provider=...` URI를 네비게이션합니다. `MainActivity.kt`는 **등록한 TRACKROOM의 HTTPS 출처**에서만 이 이벤트를 받아 실행합니다.
-- 별도의 무제한 `addJavascriptInterface`는 사용하지 않습니다. 외부 페이지는 WebView 안에서 실행되지 않고 Android 브라우저로 이동합니다.
-- Spotify 연결은 시스템 브라우저에서 OAuth PKCE 인증을 수행하고 `127.0.0.1` 임시 로컬 콜백 서버로 인증을 돌려받습니다. 오디오 파일이나 재생 권한을 TRACKROOM 서버로 전송하지 않습니다.
-- 앱 인증 토큰은 현재 프로토타입의 앱 전용 SharedPreferences에 보관됩니다. **정식 출시 전 Android Keystore 또는 동등한 보안 저장 방식으로 교체하고 로그아웃/연결 해제 및 토큰 폐기 UI를 반드시 추가해야 합니다.**
-
-## 제약과 테스트 상태
-
-- 이 패키지는 **서버 전체 저장소가 아니라 v6.9.8 위에 적용하는 부분 업데이트**입니다. 필수 기존 `style.css`, `home.js`, `room-bubbles.js`, `catalog-filters.js` 등은 기존 저장소에서 유지돼야 합니다.
-- 현재 개발 환경에는 Android SDK 및 Gradle 실행기가 없어 APK 빌드와 실기기·Spotify 실제 계정 테스트는 진행하지 못했습니다. 정적 JS 구문 확인 및 부분 업데이트 회귀 테스트만 가능합니다.
-- Spotify 재생은 성공 응답을 받았다는 사실만 확인할 수 있고, 앱이 실제로 음원을 소리 내어 재생 중인지는 아직 TRACKROOM으로 동기화되지 않습니다. 그 기능은 이후 MediaSession 연동 단계입니다.
-- 멜론 등 다른 앱의 **곡 지정 자동 재생은 현재 미구현**입니다. 버튼은 앱/곡 페이지를 열어주는 수준이며 성공 메시지도 자동 재생을 주장하지 않습니다.
-- 홈 화면의 기존 탐색 카드와 UI 소스 (`public/home.js`)는 이 ZIP에 포함되지 않아 이번에는 **추천방 선택곡·확대 재생 화면에만 버튼을 적용**했습니다.
+- Android의 알림 접근 권한은 **원래 다른 알림에 대한 광범위한 접근을 허용할 수 있는 권한**입니다. TRACKROOM은 실제로는 음악 앱의 MediaSession API만 이용하고, 알림 텍스트/메시지/음원/계정 토큰을 수집하지 않습니다.
+- 음악 세션 메타데이터는 **사용자가 앱을 보고 있을 때** 앱 WebView에만 전달합니다. 이번 버전은 서버 업로드, 계정별 청취 기록 저장, 다른 방 이용자에게 방송/동기화 기능을 추가하지 않았습니다.
+- 사용자 선택 앱이 MediaSession을 제공하지 않거나 현재 실행 중인 세션이 없으면 정보를 읽을 수 없습니다. 권한이 있어도 세션 검색 기능이 지원되지 않을 수 있습니다.
+- PlaybackState가 `playFromSearch`, `seekTo`, `skipToNext` 등을 제공하지 않으면 해당 명령을 수행하지 않습니다. 성공 메시지는 **명령 전달**을 뜻하며 실제 재생 성공을 보장하지 않습니다.
+- 정확한 음원 ID 매핑, 타 스트리밍 앱 자동 재생, Android 백그라운드 상시 감지, 다른 사용자와 실시간 동기화, iOS 연동, Play Store 배포 심사 대응은 아직 구현하지 않았습니다.
+- 이 파일에는 서버 전체 저장소의 다른 파일(`server.py`, `home.js`, `style.css` 등)은 포함되지 않으므로 기존 파일을 삭제하지 마세요.
+- 정확한 실제 지원 여부와 버그는 휴대폰에서 직접 검증해야 합니다.
 
 ## 공식 참고
 
-- https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
-- https://developer.spotify.com/documentation/web-api/concepts/redirect_uri
-- https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback
-- https://developer.spotify.com/documentation/web-api/concepts/quota-modes
-- https://developer.spotify.com/policy
-- https://developer.android.com/develop/ui/views/layout/webapps/webview
+- https://developer.android.com/reference/android/media/session/MediaSessionManager
+- https://developer.android.com/reference/android/media/session/MediaController
+- https://developer.android.com/reference/android/media/session/MediaController.TransportControls
+- https://developer.android.com/reference/android/media/session/PlaybackState
+- https://developer.android.com/reference/android/service/notification/NotificationListenerService
